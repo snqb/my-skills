@@ -1,0 +1,36 @@
+# Dependencies
+.venv/
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Browser data
+data/
+browser_state/
+screenshots/
+
+# Credentials / sessions
+*.session
+*.session-journal
+.phone_code_hash
+
+# Nested git repos (cloned skills)
+notebooklm/
+
+# Broken symlinks to .agents/
+docx
+humanizer
+postgresql-table-design
+supabase-postgres-best-practices
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+*.tmp
