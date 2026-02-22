@@ -1,0 +1,25 @@
+# Runtime
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+package-lock.json
+
+# Credentials / sessions
+*.session
+*.session-journal
+.phone_code_hash
+
+# Browser artifacts
+browser_state/
+screenshots/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+*.tmp
+.pi/
