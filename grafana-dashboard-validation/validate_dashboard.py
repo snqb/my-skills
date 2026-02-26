@@ -26,8 +26,8 @@ import argparse
 from collections import defaultdict
 
 # Configuration
-PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://192.168.0.9:9090")
-GRAFANA_URL = os.getenv("GRAFANA_URL", "http://192.168.0.9:3000")
+PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
+GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000")
 
 class Colors:
     """Terminal colors for output"""

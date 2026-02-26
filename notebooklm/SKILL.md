@@ -178,31 +178,31 @@ NB_C="<id_c>"
 cd ~/.pi/agent/skills/notebooklm
 
 # Create notebook
-bash run.sh create "Kyrgyzstan Real Estate 2026"
+bash run.sh create "Urban Transit Research 2026"
 bash run.sh use <id_from_output>
 
 # Add sources
-bash run.sh source add "https://stat.kg/en/statistics/stroitelstvo/"
+bash run.sh source add "https://example.com/transit-statistics"
 bash run.sh source add "https://youtube.com/watch?v=relevant_video"
-bash run.sh source add ~/reports/bishkek-market-analysis.pdf
+bash run.sh source add ~/reports/transit-analysis.pdf
 bash run.sh source add-text "Field Notes" "Observations from site visits..."
 
 # Deep research (auto-discovers and imports more sources)
-bash run.sh source add-research "Bishkek real estate market 2026" --mode deep --import-all
+bash run.sh source add-research "urban transit trends 2026" --mode deep --import-all
 
 # Query
-bash run.sh ask "What are the price trends by district?"
-bash run.sh ask "Compare residential vs commercial growth"
+bash run.sh ask "What are the ridership trends by route?"
+bash run.sh ask "Compare bus vs rail growth"
 
 # Generate outputs
-bash run.sh generate audio "Focus on investment opportunities" --format deep-dive --wait
+bash run.sh generate audio "Focus on infrastructure gaps" --format deep-dive --wait
 bash run.sh generate report --format briefing-doc --wait
 bash run.sh generate quiz --difficulty medium --wait
 
 # Download
-bash run.sh download audio ./kg-realestate-podcast.mp3
-bash run.sh download report ./kg-realestate-briefing.md
-bash run.sh download quiz --format markdown ./kg-realestate-quiz.md
+bash run.sh download audio ./transit-podcast.mp3
+bash run.sh download report ./transit-briefing.md
+bash run.sh download quiz --format markdown ./transit-quiz.md
 ```
 
 ## Python API (for custom scripts)
@@ -302,7 +302,7 @@ bash run.sh source list --json > sources.json
 
 **cited_text quality:** Unreliable for display (truncated, wrong language, generic chunks). Write human descriptions instead ("Архивные документы: арест, допросы, приговор").
 
-See: `~/research/bishkek-streets/prompts/qa-bio-pipeline.md` for full documented pipeline.
+See the sourced Q&A pattern above for the full pipeline.
 
 ## Limitations
 
