@@ -12,8 +12,9 @@ Combine Exa (semantic web search) with NotebookLM (source-grounded RAG) to produ
 ## Why This Combo
 
 - **Exa alone**: finds great sources, but you still need to read and synthesize them yourself
+- **Exa Research alone**: produces structured reports, but you can't interrogate the sources further or generate podcasts/quizzes
 - **NotebookLM alone**: powerful RAG, but limited to sources you manually add
-- **Together**: Exa discovers sources → NB ingests and indexes them → you query NB and get cited answers grounded only in those sources
+- **Together**: Exa discovers sources → NB ingests and indexes them → you query NB for cited answers, generate podcasts, quizzes, etc.
 
 ## The Pipeline
 
@@ -26,48 +27,28 @@ Combine Exa (semantic web search) with NotebookLM (source-grounded RAG) to produ
 
 ## Step 1: Exa Search — Find Sources
 
-Run multiple targeted queries. **Exclude Wikipedia** — the whole point is finding sources Wikipedia doesn't have.
+Two approaches depending on scope:
+
+### A) Batch search (many targeted queries)
+
+Best for breadth. Exclude Wikipedia — the point is sources Wikipedia doesn't have.
 
 ```bash
 export EXA_API_KEY=$(pass api/exa 2>/dev/null)
 
-# Search with content extraction
-curl -s -X POST "https://api.exa.ai/search" \
-  -H "accept: application/json" \
-  -H "content-type: application/json" \
-  -H "x-api-key: $EXA_API_KEY" \
-  -d '{
-    "query": "YOUR TOPIC academic research",
-    "useAutoprompt": true,
-    "numResults": 10,
-    "excludeDomains": ["wikipedia.org", "wikiwand.com"],
-    "contents": {
-      "text": { "maxCharacters": 3000 }
-    }
-  }' | jq '.results[] | {title, url, text}' > /tmp/exa-results.jsonl
-```
-
-### Batch queries pattern
-
-Run many queries to build breadth. Each angle finds different sources:
-
-```bash
 QUERIES=(
-  "topic A primary sources"
-  "topic A academic paper"
-  "topic A documentary evidence"
-  "topic A first-hand account"
-  "topic A statistics data"
+  "topic primary sources"
+  "topic academic paper"
+  "topic documentary evidence"
+  "topic statistics data 2024"
 )
 
 for q in "${QUERIES[@]}"; do
   curl -s -X POST "https://api.exa.ai/search" \
-    -H "accept: application/json" \
-    -H "content-type: application/json" \
     -H "x-api-key: $EXA_API_KEY" \
+    -H "content-type: application/json" \
     -d "{
       \"query\": \"$q\",
-      \"useAutoprompt\": true,
       \"numResults\": 8,
       \"excludeDomains\": [\"wikipedia.org\"],
       \"contents\": { \"text\": { \"maxCharacters\": 2000 } }
@@ -75,9 +56,45 @@ for q in "${QUERIES[@]}"; do
   sleep 0.5
 done
 
-# Deduplicate by URL
 jq -s 'unique_by(.url)' /tmp/exa-batch.jsonl > /tmp/exa-deduped.json
-echo "Unique sources: $(jq length /tmp/exa-deduped.json)"
+echo "Unique: $(jq length /tmp/exa-deduped.json)"
+```
+
+### B) Deep search (single comprehensive query)
+
+Best for depth on a specific question. Exa runs multi-query expansion internally.
+
+```bash
+curl -s -X POST "https://api.exa.ai/search" \
+  -H "x-api-key: $EXA_API_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "query": "your research question here",
+    "type": "deep",
+    "effort": "max",
+    "numResults": 20,
+    "excludeDomains": ["wikipedia.org"],
+    "contents": { "text": { "maxCharacters": 3000 } }
+  }' | jq '.results[] | {title, url}' > /tmp/exa-deep.json
+```
+
+### C) Exa Research (async agent-style)
+
+For the heaviest research. Exa plans, searches, reads, and produces a structured report.
+
+```bash
+# Create async research task
+curl -s -X POST "https://api.exa.ai/research" \
+  -H "x-api-key: $EXA_API_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "instructions": "Find all primary sources about TOPIC. Focus on academic papers, government data, and journalist accounts.",
+    "model": "exa-research"
+  }' | jq '{id: .researchId, status: .status}'
+
+# Poll for results
+curl -s "https://api.exa.ai/research/RESEARCH_ID" \
+  -H "x-api-key: $EXA_API_KEY" | jq '{status, output}'
 ```
 
 ### Best source types to target
