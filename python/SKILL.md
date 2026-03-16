@@ -43,6 +43,55 @@ pyright src/                # Standard mode (practical for real codebases)
 # See Part 7 for Rope, refac, LibCST usage
 ```
 
+### Single-File Scripts (PEP 723)
+
+For throwaway scripts, use `uv run` + inline deps. No venv, no requirements.txt.
+
+```python
+#!/usr/bin/env -S uv run
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "httpx",
+#     "plumbum",
+# ]
+# ///
+```
+
+```bash
+uv init --script file.py            # scaffold PEP 723 header
+uv add --script file.py httpx rich  # add deps to existing script
+uv run file.py                      # auto-installs deps, caches
+uvx ruff check .                    # run tool without installing
+```
+
+### Shell Commands in Python (plumbum)
+
+The only Python shell library where piping actually works:
+
+```python
+from plumbum import local, RETCODE
+from plumbum.cmd import git, curl, jq, grep, wc, cat
+
+# Pipe
+n = (cat["file.py"] | grep["import"] | wc["-l"])()
+
+# API + jq
+title = (curl["-s", url] | jq[".title"])()
+
+# Partial application
+api = curl["-s", "-f"]
+result = api["https://example.com"]()
+
+# Ignore errors (get exit code, no exception)
+rc = (local.cmd.ls["/maybe-missing"] & RETCODE)
+
+# Safe interpolation — always list-based, no injection
+local.cmd.rm["-rf", user_input]()  # user_input is ONE arg, never split
+```
+
+**Note:** plumbum is sync-only. For async subprocess work, prefer Deno + dax.
+
 ### pyproject.toml Template
 
 ```toml

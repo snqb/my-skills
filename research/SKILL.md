@@ -1,16 +1,23 @@
 ---
-description: Deep multi-source research by orchestrating exa-search (Web), github-quality-search (Code), and hn-research (Trends/Sentiment). Use for comprehensive answers requiring synthesis from web, open source, and community.
+description: Deep multi-source research by orchestrating exa-search (semantic), serper-search (Google SERP), github-quality-search (Code), and hn-research (Trends/Sentiment). Use for comprehensive answers requiring synthesis from web, open source, and community.
 ---
 
 # Research Specialist
-A meta-skill for conducting deep, multi-source research by orchestrating `exa-search` (Web), `github-quality-search` (Code/Libraries), and `hn-research` (Trends/Sentiment). Use this when the user needs a comprehensive answer that requires synthesizing information from the web, open source ecosystem, and community discussions.
+A meta-skill for conducting deep, multi-source research by orchestrating `exa-search` (semantic Web), `serper-search` (Google SERP), `github-quality-search` (Code/Libraries), and `hn-research` (Trends/Sentiment). Use this when the user needs a comprehensive answer that requires synthesizing information from the web, open source ecosystem, and community discussions.
 
 ## Tools & Capabilities
 
-### 1. Web Research (Exa)
+### 1a. Web Research — Semantic (Exa)
 *   **Source**: `exa-search`
-*   **Use for**: Technical documentation, blogs, official sites, comparative analysis, and solving general queries.
-*   **Action**: Use `exa-search` to gather factual ground truth.
+*   **Use for**: Conceptual/semantic queries, finding related content, AI-native search with content extraction.
+*   **Action**: Use `exa-search` for semantic search and when you need page contents inline.
+*   **Fallback**: If Exa credits are exhausted, fall back to `serper-search`.
+
+### 1b. Web Research — Google SERP (Serper)
+*   **Source**: `serper-search`
+*   **Use for**: Factual lookups, current events, pricing pages, official docs, news, local/places, shopping. Cheap and fast.
+*   **Action**: Use `serper-search` for keyword-driven Google results, news, and when Exa is unavailable.
+*   **Endpoints**: `/search`, `/news`, `/images`, `/scholar`, `/places`, `/shopping`
 
 ### 2. Ecosystem Research (GitHub)
 *   **Source**: `github-quality-search`
@@ -26,12 +33,13 @@ A meta-skill for conducting deep, multi-source research by orchestrating `exa-se
 
 1.  **Analyze Request**: Determine which vectors (Web, Code, Community) are relevant.
 2.  **Parallel Execution**:
-    *   If looking for a solution: Check GitHub for tools + Exa for reviews.
-    *   If exploring a topic: Check Exa for facts + HN for opinions.
-    *   If debugging: Check Exa for fixes + GitHub issues.
+    *   If looking for a solution: Check GitHub for tools + Serper/Exa for reviews.
+    *   If exploring a topic: Check Serper for facts + Exa for deep content + HN for opinions.
+    *   If debugging: Check Serper for fixes + GitHub issues.
+    *   If Exa credits exhausted: Use Serper as primary web source.
 3.  **Synthesis**: Combine findings into a structured report.
     *   *Summary*: High-level answer.
-    *   *Deep Dive*: Evidence from Exa.
+    *   *Deep Dive*: Evidence from Exa/Serper.
     *   *Tools*: Recommendations from GitHub.
     *   *Community Consensus*: Vibe check from HN.
 

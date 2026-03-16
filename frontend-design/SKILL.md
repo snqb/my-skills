@@ -30,7 +30,7 @@ This skill focuses on **creative aesthetics and distinctive design**. For comple
 **For Technical Implementation:**
 - **`VITE_PATTERNS.md`** - Vite-first frontend patterns (React, Svelte, Vue, Vanilla)
 - Use for: Project setup, framework selection, routing, state management, deployment
-- **ANTI-PATTERN:** Next.js is BANNED. Use Vite for all projects.
+- **Preference:** Vite for new standalone projects. Next.js fine when project already uses it.
 
 **Workflow:**
 1. Choose framework/stack from VITE_PATTERNS.md (Vite + React/Svelte/Vue/Vanilla)

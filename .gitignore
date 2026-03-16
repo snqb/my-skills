@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 *.pyo
 package-lock.json
+bun.lock
 
 # Credentials / sessions
 *.session
@@ -14,6 +15,7 @@ package-lock.json
 # Browser artifacts
 browser_state/
 screenshots/
+test-results/
 
 # OS
 .DS_Store
@@ -23,3 +25,10 @@ Thumbs.db
 *.log
 *.tmp
 .pi/
+
+# Symlinks to cross-agent skills (managed separately)
+google-image-search
+image-search
+media-retrieval
+seo-audit
+stock-photo-finder

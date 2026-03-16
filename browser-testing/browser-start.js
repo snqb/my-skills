@@ -2,12 +2,8 @@
 
 import { spawn, execSync } from "node:child_process";
 
-const useProfile = process.argv[2] === "--profile";
-
-if (process.argv[2] && process.argv[2] !== "--profile") {
-	console.log("Usage: browser-start.js [--profile]");
-	console.log("\nOptions:");
-	console.log("  --profile  Copy your default Chrome profile (cookies, logins)");
+if (process.argv[2]) {
+	console.log("Usage: browser-start.js");
 	process.exit(1);
 }
 
@@ -33,11 +29,6 @@ const args = [
 	"--port", "8222",
 	"--session-dir", SCRAPING_DIR,
 ];
-
-if (useProfile) {
-    // If user wants profile, they can pass it via ABP flags or we let ABP handle it.
-    // For now, let's stick to the ABP default session-dir.
-}
 
 spawn("npx", ["-y", ...args], {
 	detached: true,

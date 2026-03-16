@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
 Crypto wallet scanner: find BIP39 seeds, derive addresses, check balances.
+Also check balances by public address directly.
 Async parallel balance checking across 10+ chains.
 
 Usage:
     python3 scanner.py scan-telegram [--json]
     python3 scanner.py check-seed "word1 word2 ... word12" [--json]
     python3 scanner.py check-file seeds.txt [--json]
+    python3 scanner.py check-address <addr> [<addr2> ...] [--json]
+    python3 scanner.py check-addresses addresses.txt [--json]
 """
 
 import asyncio
@@ -280,16 +283,87 @@ async def check_btc(
     return {"chain": label, "address": address, "balances": {"BTC": bal} if bal > 0 else {}}
 
 
+# Well-known Solana SPL token mints → (symbol, decimals)
+SOL_KNOWN_MINTS: dict[str, tuple[str, int]] = {
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": ("USDC", 6),
+    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": ("USDT", 6),
+    "So11111111111111111111111111111111111111112":     ("wSOL", 9),
+    "7dHbWXmci3dT8UFYWYZweBLXgycu7Y3iL6trKn1Y7ARj": ("stSOL", 9),
+    "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So":  ("mSOL", 9),
+    "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN":  ("JUP", 6),
+    "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": ("BONK", 5),
+    "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm": ("WIF", 6),
+    "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr": ("POPCAT", 9),
+    "rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof":  ("RENDER", 8),
+    "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3": ("PYTH", 6),
+    "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL":  ("JTO", 9),
+    "hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux":  ("HNT", 8),
+    "85VBFQZC9TZkfaptBWjvUw7YbZjy52A6mjtPGjstQAmQ": ("W", 6),
+    "TNSRxcUxoT9xBG3de7PiJyTDYu7kskLqcpddxnEJAS6": ("TNSR", 9),
+    "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R": ("RAY", 6),
+    "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE":  ("ORCA", 6),
+    "MNDEFzGvMt87ueuHvVU9VcTqsAP5b3fTGPsHuuPA5ey":  ("MNDE", 9),
+    "SRMuApVNdxXokk5GT7XD5cUUgXMBCoAz2LHeuAoKWRt":  ("SRM", 6),
+    "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs": ("ETH-Wormhole", 8),
+    "A9mUU4qviSctJVPJdBGd2fQ2kWDmV1B2FN7LfW3MYiip": ("tBTC", 8),
+}
+
+SOL_RPC = "https://api.mainnet-beta.solana.com"
+# SPL Token Program ID
+SPL_TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+
+
 async def check_sol(
     session: aiohttp.ClientSession, sem: asyncio.Semaphore, address: str,
 ) -> dict:
-    data = await _json_post(session, sem, "https://api.mainnet-beta.solana.com", {
+    """Check native SOL + all SPL token balances."""
+    # Fire native balance + token accounts in parallel
+    native_task = _json_post(session, sem, SOL_RPC, {
         "jsonrpc": "2.0", "id": 1, "method": "getBalance", "params": [address],
     })
-    bal = 0.0
-    if data:
-        bal = (data.get("result") or {}).get("value", 0) / 1e9
-    return {"chain": "Solana", "address": address, "balances": {"SOL": bal} if bal > 0 else {}}
+    tokens_task = _json_post(session, sem, SOL_RPC, {
+        "jsonrpc": "2.0", "id": 2, "method": "getTokenAccountsByOwner",
+        "params": [
+            address,
+            {"programId": SPL_TOKEN_PROGRAM},
+            {"encoding": "jsonParsed"},
+        ],
+    })
+
+    native_data, tokens_data = await asyncio.gather(native_task, tokens_task, return_exceptions=True)
+
+    balances: dict[str, float] = {}
+
+    # Native SOL
+    if not isinstance(native_data, Exception) and native_data:
+        sol_bal = (native_data.get("result") or {}).get("value", 0) / 1e9
+        if sol_bal > 0:
+            balances["SOL"] = sol_bal
+
+    # SPL tokens
+    if not isinstance(tokens_data, Exception) and tokens_data:
+        token_accounts = (tokens_data.get("result") or {}).get("value", [])
+        for acct in token_accounts:
+            try:
+                info = acct["account"]["data"]["parsed"]["info"]
+                mint = info["mint"]
+                amount = int(info["tokenAmount"]["amount"])
+                decimals = info["tokenAmount"]["decimals"]
+                if amount == 0:
+                    continue
+                bal = amount / (10 ** decimals)
+                if bal < 0.001:
+                    continue
+                # Resolve symbol
+                if mint in SOL_KNOWN_MINTS:
+                    symbol = SOL_KNOWN_MINTS[mint][0]
+                else:
+                    symbol = mint[:8] + "…"
+                balances[symbol] = bal
+            except (KeyError, TypeError, ValueError):
+                continue
+
+    return {"chain": "Solana", "address": address, "balances": balances}
 
 
 async def check_tron(
@@ -386,6 +460,152 @@ async def scan_seed(
             print(f"   ∅  {chain_name}")
 
     return findings
+
+
+# ====================== Address Type Detection =============================
+
+def detect_address_type(addr: str) -> str | None:
+    """Detect chain family from address format. Returns: evm, btc, sol, tron, ltc, or None."""
+    addr = addr.strip()
+    if not addr:
+        return None
+    # EVM: 0x + 40 hex chars
+    if re.match(r"^0x[0-9a-fA-F]{40}$", addr):
+        return "evm"
+    # BTC segwit: bc1...
+    if addr.startswith("bc1") and 25 <= len(addr) <= 62:
+        return "btc"
+    # BTC legacy: 1... or 3... (P2PKH / P2SH)
+    if re.match(r"^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$", addr):
+        return "btc"
+    # TRON: T + 33 base58 chars
+    if re.match(r"^T[1-9A-HJ-NP-Za-km-z]{33}$", addr):
+        return "tron"
+    # Litecoin: L/M (legacy) or ltc1 (segwit)
+    if addr.startswith("ltc1") or re.match(r"^[LM][a-km-zA-HJ-NP-Z1-9]{26,34}$", addr):
+        return "ltc"
+    # Solana: base58, 32-44 chars, no 0/O/I/l
+    if re.match(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$", addr):
+        return "sol"
+    return None
+
+
+# ====================== Scan by Public Address =============================
+
+async def scan_address(
+    session: aiohttp.ClientSession, sem: asyncio.Semaphore,
+    addr: str, idx: int, quiet: bool = False,
+) -> list[dict]:
+    """Check balances for a single public address across matching chains."""
+    addr = addr.strip()
+    chain_type = detect_address_type(addr)
+
+    if not quiet:
+        print(f"\n{'─'*60}")
+        print(f"🔍 Address #{idx}: {addr}")
+        print(f"   Type: {chain_type or 'unknown'}")
+
+    if not chain_type:
+        if not quiet:
+            print(f"   ❌ Unrecognized address format")
+        return []
+
+    tasks: list[asyncio.Task] = []
+
+    if chain_type == "evm":
+        for chain in EVM_CHAINS:
+            tasks.append(check_evm_chain(session, sem, chain, addr))
+    elif chain_type == "btc":
+        label = "BTC-segwit" if addr.startswith("bc1") else "BTC-legacy"
+        tasks.append(check_btc(session, sem, addr, label))
+    elif chain_type == "sol":
+        tasks.append(check_sol(session, sem, addr))
+    elif chain_type == "tron":
+        tasks.append(check_tron(session, sem, addr))
+    elif chain_type == "ltc":
+        tasks.append(check_ltc(session, sem, addr))
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    findings: list[dict] = []
+    for res in results:
+        if isinstance(res, Exception):
+            continue
+        bals = res.get("balances", {})
+        chain_name = res["chain"]
+        if bals:
+            if not quiet:
+                parts = [_fmt_bal(v, k) for k, v in bals.items()]
+                print(f"   💰 {chain_name}: {' | '.join(parts)}")
+            findings.append({
+                "address": addr,
+                "chain": chain_name,
+                "balances": bals,
+            })
+        elif not quiet:
+            print(f"   ∅  {chain_name}")
+
+    return findings
+
+
+async def run_address_scan(addresses: list[str], json_output: bool = False):
+    """Scan a list of public addresses for balances."""
+    addresses = [a.strip() for a in addresses if a.strip()]
+    if not addresses:
+        print("No valid addresses to scan.")
+        return
+
+    types = {}
+    for a in addresses:
+        t = detect_address_type(a)
+        types[t or "unknown"] = types.get(t or "unknown", 0) + 1
+    type_summary = ", ".join(f"{v} {k}" for k, v in sorted(types.items(), key=lambda x: -x[1]))
+
+    if not json_output:
+        print(f"\n🔍 Scanning {len(addresses)} address(es) [{type_summary}]")
+
+    sem = asyncio.Semaphore(MAX_CONCURRENT)
+    all_findings: list[dict] = []
+
+    async with aiohttp.ClientSession(
+        headers={"User-Agent": "Mozilla/5.0"}
+    ) as session:
+        for i, addr in enumerate(addresses, 1):
+            findings = await scan_address(session, sem, addr, i, quiet=json_output)
+            all_findings.extend(findings)
+
+    if json_output:
+        print(json.dumps(all_findings, indent=2))
+    else:
+        print(f"\n{'═'*60}")
+        print(f"📋 SUMMARY — {len(addresses)} addresses, {len(all_findings)} with balance")
+        print(f"{'═'*60}")
+        if all_findings:
+            for f in all_findings:
+                parts = [_fmt_bal(v, k) for k, v in f["balances"].items()]
+                print(f"  💰 [{f['chain']}] {' | '.join(parts)}")
+                print(f"     Addr: {f['address']}")
+        else:
+            print("  No funds found on any chain.")
+
+    report = Path("/tmp/crypto_address_results.json")
+    report.write_text(json.dumps(all_findings, indent=2, default=str))
+    if not json_output:
+        print(f"\n📄 Results saved: {report}")
+
+
+def addresses_from_file(path: str) -> list[str]:
+    """Read addresses from a file (one per line, blank/comment lines ignored)."""
+    addrs: list[str] = []
+    for line in Path(path).read_text().strip().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if detect_address_type(line):
+            addrs.append(line)
+        else:
+            print(f"⚠️  Unrecognized address skipped: {line[:50]}...")
+    return addrs
 
 
 # ========================= Input Sources ===================================
@@ -526,6 +746,20 @@ def main():
             sys.exit(1)
         seeds = seeds_from_file(args[1])
         asyncio.run(run_scan(seeds, json_out))
+
+    elif cmd == "check-address":
+        addrs = [a for a in args[1:] if not a.startswith("--")]
+        if not addrs:
+            print("Usage: scanner.py check-address <addr> [<addr2> ...]")
+            sys.exit(1)
+        asyncio.run(run_address_scan(addrs, json_out))
+
+    elif cmd == "check-addresses":
+        if len(args) < 2:
+            print("Usage: scanner.py check-addresses /path/to/addresses.txt")
+            sys.exit(1)
+        addrs = addresses_from_file(args[1])
+        asyncio.run(run_address_scan(addrs, json_out))
 
     else:
         usage()

@@ -1,6 +1,6 @@
 ---
 name: crypto-wallet-scanner
-description: Scan for BIP39 seed phrases in Telegram saved messages or files, derive multi-chain wallets (BTC, ETH, all EVM L2s, SOL, TRON, LTC), and check balances via free public RPCs. Async parallel scanning for speed.
+description: Check crypto balances by public address or BIP39 seed phrase. Supports BTC, ETH, all EVM L2s, SOL, TRON, LTC. Also scans Telegram saved messages for seed phrases. Async parallel checking via free public RPCs.
 ---
 
 # Crypto Wallet Scanner
@@ -15,6 +15,16 @@ cd ~/.pi/agent/skills/crypto-wallet-scanner
 # First run: install dependencies into local venv
 ./setup.sh
 
+# Check balance of a public address (auto-detects chain)
+python3 scanner.py check-address 0x1234...abcd
+python3 scanner.py check-address bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh
+
+# Multiple addresses at once
+python3 scanner.py check-address 0xABC... TRX... bc1q...
+
+# Addresses from file (one per line)
+python3 scanner.py check-addresses /path/to/addresses.txt
+
 # Scan Telegram saved messages for seeds → check all chains
 python3 scanner.py scan-telegram
 
@@ -24,9 +34,19 @@ python3 scanner.py check-seed "word1 word2 ... word12"
 # Check seeds from a file (one per line)
 python3 scanner.py check-file /path/to/seeds.txt
 
-# JSON output
-python3 scanner.py scan-telegram --json
+# JSON output (works with all commands)
+python3 scanner.py check-address 0x... --json
 ```
+
+## Address Detection
+
+| Format | Detected as |
+|--------|-------------|
+| `0x` + 40 hex chars | EVM (checks all 7 chains) |
+| `bc1...` / `1...` / `3...` | Bitcoin |
+| `T` + 33 base58 | TRON |
+| `L...` / `M...` / `ltc1...` | Litecoin |
+| 32-44 base58 chars | Solana |
 
 ## Chains & Tokens Checked
 

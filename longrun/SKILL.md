@@ -11,60 +11,59 @@ Write scripts that are **concurrent inside**, **streaming out**, and **async fro
 
 ## The Pattern
 
-### 1. Script Structure (Python default)
+### 1. Script Structure (Deno + dax + std)
 
-```python
-#!/usr/bin/env python3
-"""One-line description of what this does."""
-import asyncio, aiohttp, json, sys
-from pathlib import Path
+```typescript
+#!/usr/bin/env -S deno run --allow-all
+/** One-line description of what this does. */
+import $ from "jsr:@david/dax@0.44.2";
+import { pooledMap } from "jsr:@std/async";
 
-CONCURRENCY = 10
-OUTPUT = Path("/tmp/TASKNAME.jsonl")
+const CONCURRENCY = 10;
+const OUTPUT = "/tmp/TASKNAME.jsonl";
 
-async def process(session, sem, item):
-    async with sem:
-        try:
-            # ... actual work ...
-            return {"item": item, "status": "ok", "data": result}
-        except Exception as e:
-            return {"item": item, "status": "error", "error": str(e)}
+type Result = { item: string; status: "ok" | "error"; data?: unknown; error?: string };
 
-async def main():
-    # Resume support: skip already-processed items
-    done = set()
-    if OUTPUT.exists():
-        for line in OUTPUT.read_text().splitlines():
-            done.add(json.loads(line)["item"])
+async function process(item: string): Promise<Result> {
+  try {
+    const resp = await fetch(`https://api.example.com/${item}`);
+    const data = await resp.json();
+    return { item, status: "ok", data };
+  } catch (e) {
+    return { item, status: "error", error: String(e) };
+  }
+}
 
-    items = [i for i in ALL_ITEMS if i not in done]
-    if not items:
-        print("All done.", file=sys.stderr)
-        return
+// Resume: skip already-processed items
+const done = new Set<string>();
+try {
+  for (const line of (await Deno.readTextFile(OUTPUT)).split("\n").filter(Boolean)) {
+    done.add(JSON.parse(line).item);
+  }
+} catch { /* file doesn't exist yet */ }
 
-    print(f"Processing {len(items)} items ({len(done)} already done)", file=sys.stderr)
+const items = ALL_ITEMS.filter((i) => !done.has(i));
+if (!items.length) { console.error("All done."); Deno.exit(0); }
+console.error(`Processing ${items.length} items (${done.size} already done)`);
 
-    sem = asyncio.Semaphore(CONCURRENCY)
-    async with aiohttp.ClientSession() as session:
-        tasks = [process(session, sem, item) for item in items]
-        with OUTPUT.open("a") as f:  # append mode for resume
-            for coro in asyncio.as_completed(tasks):
-                result = await coro
-                line = json.dumps(result, ensure_ascii=False)
-                f.write(line + "\n")
-                f.flush()
-                # Also print to stdout for tmux capture visibility
-                print(line, flush=True)
+// Concurrent pool → stream to disk
+const file = await Deno.open(OUTPUT, { append: true, create: true });
+const enc = new TextEncoder();
 
-if __name__ == "__main__":
-    asyncio.run(main())
+for await (const result of pooledMap(CONCURRENCY, items, process)) {
+  const line = JSON.stringify(result);
+  file.writeSync(enc.encode(line + "\n"));
+  console.log(line);
+}
+
+file.close();
 ```
 
 ### 2. Run in tmux
 
 ```bash
 tmux has-session -t pi 2>/dev/null || tmux new-session -d -s pi
-tmux new-window -d -t pi -n TASKNAME 'python /tmp/TASKNAME.py'
+tmux new-window -d -t pi -n TASKNAME 'deno run --allow-all /tmp/TASKNAME.ts'
 ```
 
 ### 3. Monitor
@@ -77,7 +76,7 @@ wc -l /tmp/TASKNAME.jsonl
 tail -3 /tmp/TASKNAME.jsonl | jq .
 
 # Error count
-grep -c '"status": "error"' /tmp/TASKNAME.jsonl
+grep -c '"status":"error"' /tmp/TASKNAME.jsonl
 
 # Sanity check first result
 head -1 /tmp/TASKNAME.jsonl | jq .
@@ -95,42 +94,77 @@ tmux kill-window -t pi:TASKNAME 2>/dev/null
 ## Key Rules
 
 - **Always `.jsonl`** — one JSON object per line. Parseable, appendable, streamable.
-- **Always `flush=True`** — results must hit disk immediately.
+- **Always `writeSync`** — results hit disk immediately. No buffering.
 - **Always append mode** — enables resume after crash.
-- **Always `try/except` per item** — one failure must not kill the batch.
-- **Semaphore for concurrency** — don't blast APIs. Start with 10, adjust.
+- **Always `try/catch` per item** — one failure must not kill the batch.
+- **`pooledMap` for concurrency** — don't blast APIs. Start with 10, adjust.
 - **Status field in every result** — `"ok"` or `"error"`, makes filtering trivial.
 - **Progress to stderr** — counts, summaries, warnings go to stderr. Data goes to stdout/file.
 - **Output to `/tmp/`** — disposable. Move to `.git/reports/` if worth keeping.
+- **File extension `.ts`** — all scripts are TypeScript, run with `deno run --allow-all`.
 
 ## Variations
 
-### Simple (no async needed)
-For CPU-bound or sequential work, same pattern without asyncio:
+### Simple (no concurrency needed)
 
-```python
-for item in items:
-    result = process(item)
-    print(json.dumps(result), flush=True)
-```
-
-### Node.js
-```javascript
-import pLimit from 'p-limit';
-const limit = pLimit(10);
-const tasks = items.map(item => limit(() => process(item)));
-for (const promise of tasks) {
-    const result = await promise;
-    process.stdout.write(JSON.stringify(result) + '\n');
+```typescript
+#!/usr/bin/env -S deno run --allow-all
+for (const item of items) {
+  const result = await process(item);
+  console.log(JSON.stringify(result));
 }
 ```
 
-### Bash (curl-based)
-```bash
-while IFS= read -r url; do
-    curl -s "$url" | jq -c '{url: $url, status: .status}' --arg url "$url"
-done < urls.txt | tee /tmp/results.jsonl
+### Shell commands with dax
+
+```typescript
+#!/usr/bin/env -S deno run --allow-all
+import $ from "jsr:@david/dax@0.44.2";
+import { pooledMap } from "jsr:@std/async";
+
+for await (const result of pooledMap(5, files, async (file) => {
+  const output = await $`ffprobe -v quiet -print_format json -show_format ${file}`.json();
+  return { file, status: "ok", data: output };
+})) {
+  console.log(JSON.stringify(result));
+}
 ```
+
+### Fetch with retry
+
+```typescript
+#!/usr/bin/env -S deno run --allow-all
+import { pooledMap, retry } from "jsr:@std/async";
+
+for await (const result of pooledMap(5, urls, async (url) => {
+  const data = await retry(async () => {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${r.status}`);
+    return r.json();
+  }, { maxAttempts: 3, minTimeout: 1000 });
+  return { url, status: "ok", data };
+})) {
+  console.log(JSON.stringify(result));
+}
+```
+
+## pi-llm for Smart Batch Jobs
+
+When items need LLM judgment/research (not just API calls), use `pi-llm.ts`:
+
+```typescript
+import { ask, run } from "/Users/sn/.pi/agent/lib/pi-llm.ts";
+import { pooledMap } from "jsr:@std/async";
+
+// DON'T parallelize LLM calls — they're expensive. Sequential + stream results.
+for (const item of remaining) {
+  const research = await run(`Research ${item.name}`, { tools: "full", maxTurns: 8 });
+  const text = await ask(`Write summary from: ${research.text}`);
+  file.writeSync(enc.encode(JSON.stringify({ id: item.id, text, cost: research.cost }) + "\n"));
+}
+```
+
+Use `ask()` for cheap per-item judgment (Haiku ~$0.001). Use `run()` when the agent needs to search/read/bash.
 
 ## Anti-patterns (DON'T)
 
@@ -140,3 +174,4 @@ done < urls.txt | tee /tmp/results.jsonl
 - ❌ No flush — buffered output defeats the purpose
 - ❌ CSV/custom formats — jsonl is universal
 - ❌ Overwrite mode — kills resume capability
+- ❌ Manual semaphore spin-wait — use `pooledMap`

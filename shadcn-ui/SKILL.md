@@ -238,15 +238,15 @@ shadcn-ui provides: Component structure, accessibility, best practices
 2. Apply frontend-design aesthetic transformation
 3. Result: Production-ready + unforgettable design
 
-### With `interface-composition` Skill
+### With `ui-design` Skill
 ```
-interface-composition provides: Visual hierarchy, balance, composition rules
+ui-design provides: Visual hierarchy, balance, composition rules, color/typography
 shadcn-ui provides: Component building blocks
 ```
 
 **Workflow:**
 1. Query shadcn-ui for components
-2. Apply interface-composition principles (visual weight, balance, hierarchy)
+2. Apply ui-design principles (visual weight, balance, hierarchy)
 3. Result: Well-composed, professional UI
 
 ## Troubleshooting

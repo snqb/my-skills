@@ -22,6 +22,8 @@ railway whoami --json
 - **No `-m` flag on `railway up`** — current CLI has no `--message`.
 - **No `--lines`/`--tail` on `railway logs`** — it streams forever. Wrap with `timeout 10 railway logs 2>&1` or pipe to `tail`.
 - **`railway init`/`railway link` ALWAYS need TTY** — there are NO `--name`, `--workspace`, `--project` flags that bypass interactive prompts. The supposed non-interactive flags don't exist. **Use the GraphQL API instead** (see recipe below).
+- **`projectCreate` REQUIRES `teamId`** (= workspaceId). Without it: `"You must specify a workspaceId"`. Get workspace IDs from `{ me { workspaces { id name } } }`. Personal workspace may have expired trial — use Pro workspace if available.
+- **Rate limit on `projectCreate`**: one project per 30s per user. Sleep between creates.
 - **Nginx port: hardcode `8080` is fine** — Railway auto-detects from `EXPOSE`. The `${PORT}` envsubst template trick is only needed if you skip EXPOSE. Hardcoding `listen 8080` + `EXPOSE 8080` works.
 - **`railway up` uploads from CWD** — run it from the directory with `Dockerfile`/source. It won't find a linked project if you `cd` elsewhere.
 - **Service auto-created by first `railway up`** — no need to create services separately. But you must add the service ID to the config before `railway logs` works.
@@ -43,13 +45,14 @@ curl -s -X POST "https://backboard.railway.app/graphql/v2" \
   -H "Content-Type: application/json" \
   -d '{"query":"{ me { workspaces { id name } } }"}' | python3 -m json.tool
 
-# 2. Create project via API (replace WORKSPACE_ID)
+# 2. Create project via API (teamId = workspaceId, REQUIRED)
 curl -s -X POST "https://backboard.railway.app/graphql/v2" \
   -H "Authorization: Bearer $RAILWAY_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"query":"mutation { projectCreate(input: { name: \"my-app\", teamId: \"WORKSPACE_ID\" }) { id name } }"}' \
+  -d '{"query":"mutation { projectCreate(input: { name: \"my-app\", teamId: \"WORKSPACE_ID\" }) { id environments { edges { node { id name } } } } }"}' \
   | python3 -m json.tool
-# → returns { "data": { "projectCreate": { "id": "PROJECT_ID", "name": "my-app" } } }
+# → returns project ID + environment ID in one call
+# ⚠️ Rate limited: 1 project per 30s. Sleep between creates.
 
 # 3. Get environment ID
 curl -s -X POST "https://backboard.railway.app/graphql/v2" \
@@ -182,10 +185,74 @@ railway environment new staging          # create env
 ```bash
 railway domain --json                    # generate *.up.railway.app
 railway domain --json --service backend  # for specific service
-railway domain example.com --json        # custom domain (shows DNS records)
+railway domain example.com --json        # custom domain (shows CNAME only)
 ```
 
+### Custom Domain Setup
+
+`railway domain example.com` prints the CNAME but **not the TXT verification record**. You need the GraphQL API to get it:
+
+```bash
+RAILWAY_TOKEN=$(python3 -c "import json; print(json.load(open('$HOME/.railway/config.json'))['user']['token'])")
+
+# Get environment ID first
+ENV_ID=$(curl -s -X POST "https://backboard.railway.app/graphql/v2" \
+  -H "Authorization: Bearer $RAILWAY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ project(id: \"PROJECT_ID\") { environments { edges { node { id name } } } } }"}' \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['project']['environments']['edges'][0]['node']['id'])")
+
+# Get all DNS records including TXT verification
+curl -s -X POST "https://backboard.railway.app/graphql/v2" \
+  -H "Authorization: Bearer $RAILWAY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"query\":\"{ domains(projectId: \\\"PROJECT_ID\\\", environmentId: \\\"$ENV_ID\\\", serviceId: \\\"SERVICE_ID\\\") { customDomains { domain status { verified verificationToken verificationDnsHost dnsRecords { recordType hostlabel requiredValue } } } } }\"}" \
+  | python3 -m json.tool
+```
+
+Response gives you both records:
+```
+CNAME  transport        → xxxx.up.railway.app        (from dnsRecords)
+TXT    _railway-verify.transport → railway-verify=abc...  (from verificationDnsHost + verificationToken)
+```
+
+### Quick custom domain checklist
+
+1. `railway domain sub.example.com` — register domain in Railway
+2. Get CNAME + TXT via GraphQL API above
+3. Add both DNS records at your registrar (see `porkbun` skill for Porkbun)
+4. Wait for propagation: `dig +short CNAME sub.example.com && dig +short TXT _railway-verify.sub.example.com`
+5. Railway auto-verifies and provisions SSL
+
 ---
+
+## Volumes (Persistent Storage)
+
+Volumes survive redeploys. Create via GraphQL API:
+
+```bash
+RAILWAY_TOKEN=$(python3 -c "import json; print(json.load(open('$HOME/.railway/config.json'))['user']['token'])")
+
+curl -s -X POST "https://backboard.railway.app/graphql/v2" \
+  -H "Authorization: Bearer $RAILWAY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"mutation { volumeCreate(input: { projectId: \"PROJECT_ID\", serviceId: \"SERVICE_ID\", mountPath: \"/app/data\" }) { id name } }"}'
+```
+
+**Gotcha**: Volume mounts *over* the Docker image path. If your Dockerfile `COPY`s a DB to `/app/data/`, the volume hides it. Seed pattern:
+```dockerfile
+COPY data/mydb.db data/mydb.seed.db    # bake seed copy
+```
+```typescript
+// On startup: if volume is empty, copy seed → actual path
+if (!existsSync(DB_PATH) && existsSync(SEED_PATH)) copyFileSync(SEED_PATH, DB_PATH)
+```
+
+## Cron / Scheduled Tasks
+
+`ServiceInstance` has a `cronSchedule` field (standard cron syntax). Set via Railway dashboard → Service → Settings → Cron Schedule.
+
+For simpler cases, use **in-process timers**: `setInterval` in your server to check daily and run tasks. Works well for monthly data refreshes — check if data is stale, scrape if needed.
 
 ## Databases
 
