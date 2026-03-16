@@ -2,33 +2,34 @@
 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import puppeteer from "puppeteer-core";
+import { getActiveTabId, ABP_BASE_URL } from "./abp-helper.js";
+import { writeFileSync } from "node:fs";
 
-const b = await Promise.race([
-	puppeteer.connect({
-		browserURL: "http://localhost:9222",
-		defaultViewport: null,
-	}),
-	new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
-]).catch((e) => {
-	console.error("✗ Could not connect to browser:", e.message);
-	console.error("  Run: browser-start.js");
-	process.exit(1);
-});
-
-const p = (await b.pages()).at(-1);
-
-if (!p) {
-	console.error("✗ No active tab found");
+try {
+	const tabId = await getActiveTabId();
+	const markup = process.argv[2] || "interactive";
+	
+	const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+	const filename = `screenshot-${timestamp}.webp`;
+	const filepath = join(tmpdir(), filename);
+	
+	// ABP returns screenshot in binary via GET or base64 via POST
+	// Let's use the POST action to get the standard response envelope with potential errors
+	const res = await fetch(`${ABP_BASE_URL}/tabs/${tabId}/screenshot`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ screenshot: { markup, format: "webp" } })
+	});
+	
+	if (!res.ok) throw new Error(`Failed to capture screenshot: ${res.statusText}`);
+	
+	const data = await res.json();
+	const base64Data = data.screenshot_after.data;
+	
+	writeFileSync(filepath, Buffer.from(base64Data, "base64"));
+	
+	console.log(filepath);
+} catch (err) {
+	console.error("✗ Screenshot failed:", err.message);
 	process.exit(1);
 }
-
-const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-const filename = `screenshot-${timestamp}.png`;
-const filepath = join(tmpdir(), filename);
-
-await p.screenshot({ path: filepath });
-
-console.log(filepath);
-
-await b.disconnect();

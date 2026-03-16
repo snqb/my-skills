@@ -1,38 +1,32 @@
 #!/usr/bin/env node
 
-import puppeteer from "puppeteer-core";
+import { getActiveTabId, tabAction, ABP_BASE_URL } from "./abp-helper.js";
 
 const url = process.argv[2];
 const newTab = process.argv[3] === "--new";
 
 if (!url) {
 	console.log("Usage: browser-nav.js <url> [--new]");
-	console.log("\nExamples:");
-	console.log("  browser-nav.js https://example.com       # Navigate current tab");
-	console.log("  browser-nav.js https://example.com --new # Open in new tab");
 	process.exit(1);
 }
 
-const b = await Promise.race([
-	puppeteer.connect({
-		browserURL: "http://localhost:9222",
-		defaultViewport: null,
-	}),
-	new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000)),
-]).catch((e) => {
-	console.error("✗ Could not connect to browser:", e.message);
-	console.error("  Run: browser-start.js");
+try {
+	let tabId;
+	if (newTab) {
+		const res = await fetch(`${ABP_BASE_URL}/tabs`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ url })
+		});
+		const data = await res.json();
+		tabId = data.id;
+		console.log(`✓ Opened new tab: ${url}`);
+	} else {
+		tabId = await getActiveTabId();
+		await tabAction(tabId, "navigate", { url });
+		console.log(`✓ Navigated to: ${url}`);
+	}
+} catch (err) {
+	console.error("✗ Navigation failed:", err.message);
 	process.exit(1);
-});
-
-if (newTab) {
-	const p = await b.newPage();
-	await p.goto(url, { waitUntil: "domcontentloaded" });
-	console.log("✓ Opened:", url);
-} else {
-	const p = (await b.pages()).at(-1);
-	await p.goto(url, { waitUntil: "domcontentloaded" });
-	console.log("✓ Navigated to:", url);
 }
-
-await b.disconnect();

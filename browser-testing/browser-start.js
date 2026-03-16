@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { spawn, execSync } from "node:child_process";
-import puppeteer from "puppeteer-core";
 
 const useProfile = process.argv[2] === "--profile";
 
@@ -14,73 +13,53 @@ if (process.argv[2] && process.argv[2] !== "--profile") {
 
 const SCRAPING_DIR = `${process.env.HOME}/.cache/browser-tools`;
 
-// Check if already running on :9222
+// Check if already running on :8222 (ABP default)
 try {
-	const browser = await puppeteer.connect({
-		browserURL: "http://localhost:9222",
-		defaultViewport: null,
-	});
-	await browser.disconnect();
-	console.log("✓ Chrome already running on :9222");
-	process.exit(0);
+	const res = await fetch("http://localhost:8222/api/v1/browser/status");
+	if (res.ok) {
+		console.log("✓ Agent Browser Protocol (ABP) already running on :8222");
+		process.exit(0);
+	}
 } catch {}
 
 // Setup profile directory
 execSync(`mkdir -p "${SCRAPING_DIR}"`, { stdio: "ignore" });
 
-// Remove SingletonLock to allow new instance
-try {
-	execSync(`rm -f "${SCRAPING_DIR}/SingletonLock" "${SCRAPING_DIR}/SingletonSocket" "${SCRAPING_DIR}/SingletonCookie"`, { stdio: "ignore" });
-} catch {}
+// Start ABP
+console.log("Starting Agent Browser Protocol (ABP)...");
+
+const args = [
+	"agent-browser-protocol",
+	"--port", "8222",
+	"--session-dir", SCRAPING_DIR,
+];
 
 if (useProfile) {
-	console.log("Syncing profile...");
-	execSync(
-		`rsync -a --delete \
-			--exclude='SingletonLock' \
-			--exclude='SingletonSocket' \
-			--exclude='SingletonCookie' \
-			--exclude='*/Sessions/*' \
-			--exclude='*/Current Session' \
-			--exclude='*/Current Tabs' \
-			--exclude='*/Last Session' \
-			--exclude='*/Last Tabs' \
-			"${process.env.HOME}/Library/Application Support/Google/Chrome/" "${SCRAPING_DIR}/"`,
-		{ stdio: "pipe" },
-	);
+    // If user wants profile, they can pass it via ABP flags or we let ABP handle it.
+    // For now, let's stick to the ABP default session-dir.
 }
 
-// Start Chrome with flags to force new instance
-spawn(
-	"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-	[
-		"--remote-debugging-port=9222",
-		`--user-data-dir=${SCRAPING_DIR}`,
-		"--no-first-run",
-		"--no-default-browser-check",
-	],
-	{ detached: true, stdio: "ignore" },
-).unref();
+spawn("npx", ["-y", ...args], {
+	detached: true,
+	stdio: "ignore",
+}).unref();
 
-// Wait for Chrome to be ready
+// Wait for ABP to be ready
 let connected = false;
-for (let i = 0; i < 30; i++) {
+for (let i = 0; i < 60; i++) {
 	try {
-		const browser = await puppeteer.connect({
-			browserURL: "http://localhost:9222",
-			defaultViewport: null,
-		});
-		await browser.disconnect();
-		connected = true;
-		break;
-	} catch {
-		await new Promise((r) => setTimeout(r, 500));
-	}
+		const res = await fetch("http://localhost:8222/api/v1/browser/status");
+		if (res.ok) {
+			connected = true;
+			break;
+		}
+	} catch {}
+	await new Promise((r) => setTimeout(r, 500));
 }
 
 if (!connected) {
-	console.error("✗ Failed to connect to Chrome");
+	console.error("✗ Failed to start Agent Browser Protocol");
 	process.exit(1);
 }
 
-console.log(`✓ Chrome started on :9222${useProfile ? " with your profile" : ""}`);
+console.log("✓ Agent Browser Protocol started on :8222");
