@@ -10,20 +10,15 @@ if (!code) {
 
 try {
 	const tabId = await getActiveTabId();
-	const res = await tabAction(tabId, "execute", { script: code });
-	const result = res.result;
+	const result = await tabAction(tabId, "execute", { script: code });
 	
 	if (Array.isArray(result)) {
 		for (let i = 0; i < result.length; i++) {
 			if (i > 0) console.log("");
-			for (const [key, value] of Object.entries(result[i])) {
-				console.log(`${key}: ${value}`);
-			}
+			console.log(JSON.stringify(result[i], null, 2));
 		}
 	} else if (typeof result === "object" && result !== null) {
-		for (const [key, value] of Object.entries(result)) {
-			console.log(`${key}: ${value}`);
-		}
+		console.log(JSON.stringify(result, null, 2));
 	} else {
 		console.log(result);
 	}

@@ -4,8 +4,7 @@ import { getActiveTabId, tabAction } from "./abp-helper.js";
 
 try {
 	const tabId = await getActiveTabId();
-	const res = await tabAction(tabId, "execute", { script: "document.cookie" });
-	const cookiesStr = res.result;
+	const cookiesStr = await tabAction(tabId, "execute", { script: "document.cookie" });
 	
 	if (!cookiesStr) {
 		console.log("No cookies found (or they are all HttpOnly)");
@@ -13,8 +12,8 @@ try {
 	}
 	
 	const cookies = cookiesStr.split("; ").map(c => {
-		const [name, value] = c.split("=");
-		return { name, value };
+		const [name, ...parts] = c.split("=");
+		return { name, value: parts.join("=") };
 	});
 
 	for (const cookie of cookies) {

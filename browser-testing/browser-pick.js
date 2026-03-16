@@ -12,7 +12,7 @@ try {
 	const tabId = await getActiveTabId();
 	
 	// Inject the pick() function and call it
-	const res = await tabAction(tabId, "execute", { script: `
+	const resultStr = await tabAction(tabId, "execute", { script: `
 (async () => {
 	return new Promise((resolve) => {
 		const selections = [];
@@ -100,22 +100,13 @@ try {
 })()
 ` });
 
-	const result = JSON.parse(res.result);
-	
-	if (Array.isArray(result)) {
-		for (let i = 0; i < result.length; i++) {
-			if (i > 0) console.log("");
-			for (const [key, value] of Object.entries(result[i])) {
-				console.log(`${key}: ${value}`);
-			}
-		}
-	} else if (typeof result === "object" && result !== null) {
-		for (const [key, value] of Object.entries(result)) {
-			console.log(`${key}: ${value}`);
-		}
-	} else {
-		console.log(result);
+	const result = JSON.parse(resultStr);
+	if (!result) {
+		console.log("Cancelled");
+		process.exit(0);
 	}
+	
+	console.log(JSON.stringify(result, null, 2));
 } catch (err) {
 	console.error("✗ Selection failed:", err.message);
 	process.exit(1);
