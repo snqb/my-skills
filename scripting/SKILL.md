@@ -47,7 +47,7 @@ PEP 723 inline deps, zero-setup. `plumbum` for shell commands (only lib where pi
 Any script can call pi's LLM (same auth.json, same models) for judgment or research steps:
 
 ```typescript
-import { ask, run } from "/Users/sn/.pi/agent/lib/pi-llm.ts";
+import { ask, run } from "~/.pi/agent/lib/pi-llm.ts";
 
 const answer = await ask("Is this critical?", { model: "claude-haiku-4-5" });       // text→text, $0.001
 const result = await run("Research X", { tools: "full", maxTurns: 8 });              // agent+tools, $0.05-0.30

@@ -153,7 +153,7 @@ for await (const result of pooledMap(5, urls, async (url) => {
 When items need LLM judgment/research (not just API calls), use `pi-llm.ts`:
 
 ```typescript
-import { ask, run } from "/Users/sn/.pi/agent/lib/pi-llm.ts";
+import { ask, run } from "~/.pi/agent/lib/pi-llm.ts";
 import { pooledMap } from "jsr:@std/async";
 
 // DON'T parallelize LLM calls — they're expensive. Sequential + stream results.

@@ -358,7 +358,7 @@ new TextDecoder().decode(stdout);
 Scripts can call pi's own LLM (same auth, same models) for judgment, research, or writing steps mid-pipeline:
 
 ```typescript
-import { ask, run } from "/Users/sn/.pi/agent/lib/pi-llm.ts";
+import { ask, run } from "~/.pi/agent/lib/pi-llm.ts";
 
 // Text in, text out. No tools. Cheap.
 const answer = await ask("Is this log healthy?\n" + logText, { model: "claude-haiku-4-5" });
