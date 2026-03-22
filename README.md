@@ -18,7 +18,7 @@ Each folder contains a `SKILL.md` that pi picks up automatically.
 | **backreason** | Mine session history to improve docs & skills |
 | **book-downloader** | Search & download from Library Genesis |
 | **brainstorm** | Deep brainstorming with mental models |
-| **browser-testing** | Browser automation via Vibium, Playwright, CDP |
+| **browser-testing** | Full ABP browser automation (30+ commands) |
 | **canvas-design** | Visual art & poster creation |
 | **code-intelligence** | Ctags-based symbol & dependency analysis |
 | **code-review** | Structured code review for diffs & files |
