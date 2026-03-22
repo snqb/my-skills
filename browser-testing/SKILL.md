@@ -169,10 +169,18 @@ When events occur during any action, they're printed automatically:
   ↗ popup: https://popup.com          # Popup window
 ```
 
-## Rules
+## Speed Rules
+
+**The fast pattern**: navigate → eval to extract. Skip screenshots unless you're lost.
 
 1. **Start ABP first**: `browser.js start`
-2. **Screenshot after actions**: Use `--shot` on any command, or call `screenshot` separately
-3. **Use pick for ambiguity**: When you can't find the right coordinates, let the user click
-4. **Batch related inputs**: Click + type + Enter = one `batch` call instead of three
-5. **text vs content**: `text` is fast API-native extraction; `content` uses Readability for clean Markdown articles
+2. **Don't screenshot every step**: Skip `--shot` during form-filling. Only screenshot when you need to see layout.
+3. **Observe the URL after search**: Most SPAs encode filters in URL params. Copy it, modify it, `nav` directly next time — skip the form entirely.
+4. **Extract data via `eval`, not vision**: One JS query extracts 10 results faster than scrolling + screenshotting.
+5. **Batch related inputs**: Click + type + Enter = one `batch` call instead of three.
+6. **Use `text` for simple data**: `text` is faster than `eval` for plain text extraction.
+7. **Use pick for ambiguity**: When coordinates are unclear, let the user click.
+
+**Anti-pattern**: click → screenshot → read image → decide → click → screenshot → ... (each step: ~3s for screenshot + LLM vision round-trip)
+
+**Fast pattern**: nav → click click click (no shots) → eval to extract all data → screenshot once to verify
