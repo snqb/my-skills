@@ -199,12 +199,12 @@ async function run() {
 	case "scroll": {
 		const [x, y] = pos.map(Number);
 		if (isNaN(x) || isNaN(y)) throw new Error("Usage: scroll <x> <y> --dy N [--dx N]");
-		const body = { x, y, ...shotOpts() };
-		if (flags.dy) body.delta_y = Number(flags.dy);
-		if (flags.dx) body.delta_x = Number(flags.dx);
-		if (!body.delta_x && !body.delta_y) throw new Error("Need --dy and/or --dx");
+		const scrolls = [];
+		if (flags.dy) scrolls.push({ delta_px: Number(flags.dy), direction: "y" });
+		if (flags.dx) scrolls.push({ delta_px: Number(flags.dx), direction: "x" });
+		if (!scrolls.length) throw new Error("Need --dy and/or --dx");
 		const id = await activeTab(flags.tab);
-		out(await api("POST", `/tabs/${id}/scroll`, body), "scroll");
+		out(await api("POST", `/tabs/${id}/scroll`, { x, y, scrolls, ...shotOpts() }), "scroll");
 		console.log(`✓ scroll at ${x},${y}`);
 		return;
 	}
