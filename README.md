@@ -24,7 +24,6 @@ Each folder contains a `SKILL.md` that pi picks up automatically.
 | **code-review** | Structured code review for diffs & files |
 | **context7** | Live library docs to prevent hallucinations |
 | **coolify** | Coolify deployment & management |
-| **crypto-wallet-scanner** | BIP39 seed scanner, multi-chain wallet derivation |
 | **dead-code-reaper** | Find unused code with Vulture / ts-prune |
 | **docker** | Docker workflows, optimization, debugging |
 | **elixir** | Elixir / Ash Framework / Phoenix |
@@ -42,7 +41,6 @@ Each folder contains a `SKILL.md` that pi picks up automatically.
 | **mcp-builder** | Build MCP servers |
 | **md** | Markdown reference & editing |
 | **notebooklm** | NotebookLM automation via direct RPC API |
-| **ort-question-generator** | Generate ORT test questions |
 | **pass** | Password store integration |
 | **payloadcms** | Payload CMS collections, hooks, access control |
 | **pdf** | PDF manipulation — extract, create, merge, forms |
@@ -55,10 +53,8 @@ Each folder contains a `SKILL.md` that pi picks up automatically.
 | **takopi** | Telegram bridge for remote coding |
 | **tdd** | Test-Driven Development enforcement |
 | **telegram-bot** | Telegram bots with aiogram 3.x |
-| **telegram-channel-discovery** | Scrape Telegram channels via Telethon |
 | **ticket** | Git-native task tracking in Markdown |
 | **tmux** | Background processes in tmux |
 | **ui-design** | Complete UI/UX design system |
 | **ui-patterns** | Research real-world UI patterns |
 | **uncomplex-analyzer** | Find complex code & suggest replacements |
-| **xteink-x4** | Xteink X4 e-ink reader firmware & tools |
