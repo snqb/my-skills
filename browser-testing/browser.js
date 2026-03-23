@@ -1,13 +1,15 @@
-#!/usr/bin/env node
+#!/usr/bin/env -S deno run -A
 // browser.js — Full Agent Browser Protocol (ABP) CLI
 // https://github.com/theredsix/agent-browser-protocol
 
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { spawn, execSync } from "node:child_process";
+import { Readability } from "npm:@mozilla/readability@^0.6.0";
+import { JSDOM } from "npm:jsdom@^27.0.1";
+import TurndownService from "npm:turndown@^7.2.2";
+import { gfm } from "npm:turndown-plugin-gfm@^1.0.2";
+import { encodeBase64, decodeBase64 } from "jsr:@std/encoding@^1/base64";
 
 const API = "http://localhost:8222/api/v1";
+const HOME = Deno.env.get("HOME") || "/tmp";
 
 // ── HTTP ──
 
@@ -44,8 +46,9 @@ function saveShot(envelope, label) {
 	const s = envelope?.screenshot_after;
 	if (!s?.data) return null;
 	const ts = new Date().toISOString().replace(/[:.]/g, "-");
-	const p = join(tmpdir(), `${label || "shot"}-${ts}.${s.format || "webp"}`);
-	writeFileSync(p, Buffer.from(s.data, "base64"));
+	const tmp = Deno.env.get("TMPDIR") || "/tmp";
+	const p = `${tmp}/${label || "shot"}-${ts}.${s.format || "webp"}`;
+	Deno.writeFileSync(p, decodeBase64(s.data));
 	return p;
 }
 
@@ -93,13 +96,14 @@ function shotOpts() {
 
 // ── Args ──
 
-const cmd = process.argv[2];
+const args = Deno.args;
+const cmd = args[0];
 const flags = {}, pos = [];
-for (let i = 3; i < process.argv.length; i++) {
-	if (process.argv[i].startsWith("--")) {
-		const k = process.argv[i].slice(2);
-		flags[k] = process.argv[i + 1] && !process.argv[i + 1].startsWith("--") ? process.argv[++i] : true;
-	} else pos.push(process.argv[i]);
+for (let i = 1; i < args.length; i++) {
+	if (args[i].startsWith("--")) {
+		const k = args[i].slice(2);
+		flags[k] = args[i + 1] && !args[i + 1].startsWith("--") ? args[++i] : true;
+	} else pos.push(args[i]);
 }
 
 // ── Pick script (injected into browser) ──
@@ -134,10 +138,13 @@ async function run() {
 
 	case "start": {
 		try { if ((await fetch(`${API}/browser/status`)).ok) return console.log("✓ ABP already running on :8222"); } catch {}
-		const dir = `${process.env.HOME}/.cache/browser-tools`;
-		execSync(`mkdir -p "${dir}"`, { stdio: "ignore" });
-		spawn("npx", ["-y", "agent-browser-protocol", "--port", "8222", "--session-dir", dir],
-			{ detached: true, stdio: "ignore" }).unref();
+		const dir = `${HOME}/.cache/browser-tools`;
+		await Deno.mkdir(dir, { recursive: true });
+		const child = new Deno.Command("npx", {
+			args: ["-y", "agent-browser-protocol", "--port", "8222", "--session-dir", dir],
+			stdin: "null", stdout: "null", stderr: "null",
+		}).spawn();
+		child.unref();
 		for (let i = 0; i < 60; i++) {
 			try { if ((await fetch(`${API}/browser/status`)).ok) return console.log("✓ ABP started on :8222"); } catch {}
 			await new Promise((r) => setTimeout(r, 500));
@@ -322,10 +329,6 @@ async function run() {
 			script: "({ html: document.documentElement.outerHTML, url: window.location.href, title: document.title })",
 		});
 		const { html, url: finalUrl, title } = unwrap(raw);
-		const { Readability } = await import("@mozilla/readability");
-		const { JSDOM } = await import("jsdom");
-		const TurndownService = (await import("turndown")).default;
-		const { gfm } = await import("turndown-plugin-gfm");
 		const doc = new JSDOM(html, { url: finalUrl });
 		const article = new Readability(doc.window.document).parse();
 		const td = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
@@ -550,4 +553,4 @@ FLAGS (any command)
 	}
 }
 
-run().catch((e) => { console.error(`✗ ${e.message}`); process.exit(1); });
+run().catch((e) => { console.error(`✗ ${e.message}`); Deno.exit(1); });
