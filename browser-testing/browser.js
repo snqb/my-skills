@@ -2,11 +2,7 @@
 // browser.js — Full Agent Browser Protocol (ABP) CLI
 // https://github.com/theredsix/agent-browser-protocol
 
-import { Readability } from "npm:@mozilla/readability@^0.6.0";
-import { JSDOM } from "npm:jsdom@^27.0.1";
-import TurndownService from "npm:turndown@^7.2.2";
-import { gfm } from "npm:turndown-plugin-gfm@^1.0.2";
-import { encodeBase64, decodeBase64 } from "jsr:@std/encoding@^1/base64";
+import { decodeBase64 } from "jsr:@std/encoding@^1/base64";
 
 const API = "http://localhost:8222/api/v1";
 const HOME = Deno.env.get("HOME") || "/tmp";
@@ -329,6 +325,12 @@ async function run() {
 			script: "({ html: document.documentElement.outerHTML, url: window.location.href, title: document.title })",
 		});
 		const { html, url: finalUrl, title } = unwrap(raw);
+		const [{ Readability }, { JSDOM }, { default: TurndownService }, { gfm }] = await Promise.all([
+			import("npm:@mozilla/readability@^0.6.0"),
+			import("npm:jsdom@^27.0.1"),
+			import("npm:turndown@^7.2.2"),
+			import("npm:turndown-plugin-gfm@^1.0.2"),
+		]);
 		const doc = new JSDOM(html, { url: finalUrl });
 		const article = new Readability(doc.window.document).parse();
 		const td = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
