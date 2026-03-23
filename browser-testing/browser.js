@@ -24,16 +24,29 @@ function unwrap(data) {
 	return r && typeof r === "object" && "value" in r ? r.value : r;
 }
 
+async function ensureRunning() {
+	try { await fetch(`${API}/browser/status`); return; } catch {}
+	console.error("⟳ ABP down, restarting...");
+	const dir = `${HOME}/.cache/browser-tools`;
+	await Deno.mkdir(dir, { recursive: true });
+	new Deno.Command("npx", {
+		args: ["-y", "agent-browser-protocol", "--port", "8222", "--session-dir", dir],
+		stdin: "null", stdout: "null", stderr: "null",
+	}).spawn().unref();
+	for (let i = 0; i < 60; i++) {
+		try { if ((await fetch(`${API}/browser/status`)).ok) { console.error("✓ ABP restarted"); return; } } catch {}
+		await new Promise(r => setTimeout(r, 500));
+	}
+	throw new Error("Failed to restart ABP");
+}
+
 async function activeTab(id) {
 	if (id) return id;
-	try {
-		const tabs = await api("GET", "/tabs");
-		const t = tabs.find((t) => t.active) || tabs[0];
-		if (t) return t.id;
-		return (await api("POST", "/tabs", { url: "about:blank" })).id;
-	} catch {
-		throw new Error("ABP not running. Run: browser.js start");
-	}
+	await ensureRunning();
+	const tabs = await api("GET", "/tabs");
+	const t = tabs.find((t) => t.active) || tabs[0];
+	if (t) return t.id;
+	return (await api("POST", "/tabs", { url: "about:blank" })).id;
 }
 
 // ── Screenshot & Events ──
@@ -133,19 +146,9 @@ async function run() {
 	// ═══ Lifecycle ═══
 
 	case "start": {
-		try { if ((await fetch(`${API}/browser/status`)).ok) return console.log("✓ ABP already running on :8222"); } catch {}
-		const dir = `${HOME}/.cache/browser-tools`;
-		await Deno.mkdir(dir, { recursive: true });
-		const child = new Deno.Command("npx", {
-			args: ["-y", "agent-browser-protocol", "--port", "8222", "--session-dir", dir],
-			stdin: "null", stdout: "null", stderr: "null",
-		}).spawn();
-		child.unref();
-		for (let i = 0; i < 60; i++) {
-			try { if ((await fetch(`${API}/browser/status`)).ok) return console.log("✓ ABP started on :8222"); } catch {}
-			await new Promise((r) => setTimeout(r, 500));
-		}
-		throw new Error("Timed out starting ABP");
+		await ensureRunning();
+		console.log("✓ ABP running on :8222");
+		return;
 	}
 
 	case "status":
