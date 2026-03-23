@@ -434,7 +434,7 @@ async function run() {
 		const ms = Number(pos[0]);
 		if (isNaN(ms)) throw new Error("Usage: wait <ms>");
 		const id = await activeTab(flags.tab);
-		out(await api("POST", `/tabs/${id}/wait`, { duration_ms: ms, ...shotOpts() }), "wait");
+		out(await api("POST", `/tabs/${id}/wait`, { ms, ...shotOpts() }), "wait");
 		console.log(`✓ ${ms}ms`);
 		return;
 	}
