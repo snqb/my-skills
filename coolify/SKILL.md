@@ -334,7 +334,101 @@ echo | openssl s_client -servername domain.com -connect domain.com:443 2>/dev/nu
 
 ---
 
-## Part 7: Debugging
+## Part 7: Shared Environment Variables (Team Variables)
+
+Coolify supports team-level shared variables referenced via `{{ team.VARIABLE_NAME }}` in app env vars. These are encrypted in the `shared_environment_variables` table.
+
+### ⚠️ API Limitation (v4.0.0-beta.468)
+
+The REST API **does NOT expose** shared variable CRUD endpoints. The `{{ team.X }}` syntax works when setting app env vars, but you cannot list/create/delete shared variables via API.
+
+### Creating Shared Variables (artisan tinker)
+
+The only reliable programmatic method:
+
+```bash
+sshpass -p 'PASSWORD' ssh user@COOLIFY_HOST \
+  "docker exec coolify php artisan tinker --execute=\"
+    \\\$var = new \App\Models\SharedEnvironmentVariable;
+    \\\$var->key = 'mybot';
+    \\\$var->value = 'TOKEN_VALUE';
+    \\\$var->team_id = 0;
+    \\\$var->save();
+    echo 'Created: ' . \\\$var->id;
+  \""
+```
+
+### Listing Shared Variables
+
+```bash
+# Via Coolify's own DB (not the app DB)
+sshpass -p 'PASSWORD' ssh user@COOLIFY_HOST \
+  "docker exec \$(docker ps -q -f name=coolify-db) psql -U coolify \
+   -c 'SELECT id, key, team_id FROM shared_environment_variables ORDER BY key;'"
+```
+
+Values are Laravel-encrypted (base64 blobs) — cannot read plaintext from DB.
+
+### Creating App Env Vars (artisan tinker)
+
+The REST API `POST /applications/{uuid}/envs` creates **duplicate entries** (bug in beta). Use artisan tinker instead:
+
+```bash
+sshpass -p 'PASSWORD' ssh user@COOLIFY_HOST << 'EOF'
+docker exec coolify php artisan tinker --execute="
+  \$v = \App\Models\EnvironmentVariable::create([
+    'key' => 'DATABASE_URL',
+    'value' => '{{ team.PROD_DB_URL }}',
+    'resourceable_type' => 'App\\\Models\\\Application',
+    'resourceable_id' => APP_ID,       // from applications table
+    'is_preview' => false,
+    'is_runtime' => true,
+    'is_buildtime' => true,
+    'is_shared' => true,               // true when using {{ team.X }}
+  ]);
+  echo 'Created id=' . \$v->id;
+"
+EOF
+```
+
+**Important:** Coolify's model observer auto-creates a preview entry. Creating one runtime entry produces TWO rows (runtime + preview) — this is correct. Don't manually create preview entries.
+
+### Gotchas
+
+| Issue | Detail |
+|-------|--------|
+| **API POST duplicates** | REST API creates 2 entries per POST (build + runtime). Use artisan tinker instead. |
+| **f-string brace eating** | Python `f"{{ team.{name} }}"` produces SINGLE braces. Use raw strings or quadruple braces `f"{{{{ team.{name} }}}}"`. |
+| **Preview entries are normal** | Each key has 2 DB rows (runtime: `is_preview=f, is_runtime=t, is_buildtime=t` + preview: `is_preview=t, is_runtime=f, is_buildtime=f`). The API shows both — this looks like duplicates but is correct. |
+| **Values encrypted** | `value` column uses Laravel encryption. Cannot read/compare directly in DB. |
+| **Delete auto-created extras** | If you accidentally create 3 rows, delete the middle one: `is_preview=t AND is_runtime=t AND is_buildtime=t`. |
+
+### Standard Bot Env Template
+
+Every domcom bot app should have these 8 vars:
+
+```
+DATABASE_URL           = {{ team.PROD_DB_URL }}       🔗 shared
+TELEGRAM_BOT_TOKEN_XX  = {{ team.xxbot }}              🔗 shared
+COLLAGE_BOT_TOKEN      = {{ team.alertmalertbot }}     🔗 shared
+REDIS_URL              = redis://parser-redis:6379/0
+LOG_LEVEL              = INFO
+ADMIN_PASSWORD         = domcom2024
+ADMIN_SECRET_KEY       = xx-admin-secret-key-change-in-prod
+PAYMENT_STUB_MODE      = false
+```
+
+### Finding App IDs
+
+```bash
+sshpass -p 'PASSWORD' ssh user@COOLIFY_HOST \
+  "docker exec \$(docker ps -q -f name=coolify-db) psql -U coolify \
+   -c \"SELECT id, uuid, name FROM applications WHERE name LIKE '%bot%' ORDER BY name;\""
+```
+
+---
+
+## Part 8: Debugging
 
 ### Quick Commands
 

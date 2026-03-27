@@ -20,6 +20,7 @@ One skill to load for any visual work. Routes to specialized sub-skills by task 
 | **shadcn/ui** (accessible primitives, MCP server) | `shadcn-ui` | `~/.pi/agent/skills/shadcn-ui/SKILL.md` |
 | **Static art** (posters, PDF, PNG, visual philosophy) | `canvas-design` | `~/.pi/agent/skills/canvas-design/SKILL.md` |
 | **Photo search** (multi-source: Serper, Unsplash, Pexels) | `photo-finder` | `~/.pi/agent/skills/photo-finder/SKILL.md` |
+| **Pixel editing** (erase text/watermarks from existing images, fix logos) | `image-edit` | `~/my-skills/image-edit/SKILL.md` |
 
 ---
 
@@ -54,6 +55,13 @@ One skill to load for any visual work. Routes to specialized sub-skills by task 
 ### Create visual art / poster / PDF
 ```
 1. canvas-design   → Full pipeline: philosophy → canvas → refinement
+```
+
+### Edit an existing image (remove text, erase element, fix logo)
+```
+1. image-edit      → Inspect background type, scan coordinates, erase with alpha
+2. browser-testing → Verify result in actual browser (cache gotcha!)
+3. canvas-design   → If 2 attempts fail — recreate the asset cleanly
 ```
 
 ---

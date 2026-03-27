@@ -148,23 +148,47 @@ for await (const result of pooledMap(5, urls, async (url) => {
 }
 ```
 
-## pi-llm for Smart Batch Jobs
+## LLM vs Algorithm — Decision Point
 
-When items need LLM judgment/research (not just API calls), use `pi-llm.ts`:
+**Before writing fuzzy matching, scoring functions, or multi-iteration string comparison — STOP.**
+
+These tasks are **judgment**, not computation. Use `ask()`:
+- **Entity matching**: "Is hotel A the same as hotel B?" — $0.001, 100% accuracy
+- **Classification**: "Is this review positive?" — cheaper than sentiment libraries
+- **Extraction**: "Extract the room type from this string" — no regex needed
+- **Validation**: "Does this result make sense?" — catches edge cases you'd never code for
+
+**Tokens are unlimited** (Max subscription). Don't optimize for cost — optimize for result quality. Writing 10 iterations of fuzzy matching = hours wasted + bugs + false matches. `ask()` gets it right first time.
+
+**Rule of thumb**: if you're on iteration 2+ of fixing edge cases in string matching, you already wasted time — should have used `ask()` from the start.
+
+### When NOT to use LLM
+- Exact lookups, numeric comparisons, deterministic transforms — code is faster
+- Real-time hot paths — `ask()` adds 200-500ms per call
+
+## pi-llm for Smart Batch Jobs
 
 ```typescript
 import { ask, run } from "~/.pi/agent/lib/pi-llm.ts";
-import { pooledMap } from "jsr:@std/async";
 
-// DON'T parallelize LLM calls — they're expensive. Sequential + stream results.
+// Judgment per item — cheap and accurate
 for (const item of remaining) {
-  const research = await run(`Research ${item.name}`, { tools: "full", maxTurns: 8 });
-  const text = await ask(`Write summary from: ${research.text}`);
-  file.writeSync(enc.encode(JSON.stringify({ id: item.id, text, cost: research.cost }) + "\n"));
+  const match = await ask(
+    `Is "${item.nameA}" the same entity as "${item.nameB}"? ` +
+    `Context: ${item.city}, ${item.country}. Answer: yes/no`,
+    { model: "claude-haiku-4-5" }  // $0.001/call
+  );
+  // ...
+}
+
+// Research per item — when agent needs tools
+for (const item of remaining) {
+  const result = await run(`Research ${item.name}`, { tools: "full", maxTurns: 8 });
+  file.writeSync(enc.encode(JSON.stringify({ id: item.id, text: result.text, cost: result.cost }) + "\n"));
 }
 ```
 
-Use `ask()` for cheap per-item judgment (Haiku ~$0.001). Use `run()` when the agent needs to search/read/bash.
+`ask()` = text→text, no tools, instant. `run()` = bounded agent with bash/search/read. Tokens are unlimited — use freely.
 
 ## Anti-patterns (DON'T)
 
@@ -175,3 +199,5 @@ Use `ask()` for cheap per-item judgment (Haiku ~$0.001). Use `run()` when the ag
 - ❌ CSV/custom formats — jsonl is universal
 - ❌ Overwrite mode — kills resume capability
 - ❌ Manual semaphore spin-wait — use `pooledMap`
+- ❌ Writing fuzzy matching / scoring algorithms for entity resolution — use `ask()` for judgment
+- ❌ Iterating on string heuristics (identity keywords, compound tokenizers, etc.) — if iteration 2+ of edge case fixes, switch to LLM

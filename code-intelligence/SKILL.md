@@ -189,3 +189,62 @@ $INTEL matrix bot parser shared countries
 # If not 0: find the offending files
 rg "from parser\." bot/ --type py -l
 ```
+
+### Refactoring — Blast Radius Assessment
+
+Before changing a module's public surface, assess impact systematically:
+
+```bash
+# 1. Map public surface — what does this module export?
+$INTEL analyze src/core/engine.py
+# Note every function/class that could be imported externally
+
+# 2. Find all dependents — who uses this module?
+rg "from core\.engine" --type py -l
+rg "import engine" --type py -l
+$INTEL matrix core api shared  # coupling matrix view
+
+# 3. Map internal structure
+$INTEL map src/core/engine.py
+# Private functions (underscore-prefixed) are safe to restructure freely
+
+# 4. Classify changes by risk:
+#   SAFE:      rename private functions, reorganize internal logic
+#   UPDATES:   rename public symbols, change signatures → update all dependents
+#   RISKY:     remove exports, change return types, alter base class contracts → verify all call sites
+```
+
+Always present the blast radius **before** making breaking changes.
+
+## Output Presentation Formats
+
+When presenting code structure to the user:
+
+### Module maps
+```
+src/
+  core/         — Core engine: parsing, diffing, output
+    engine.py   — Main diff algorithm (diff_images, compare)
+    parser.py   — Format parsing (PNG, JPEG, WebP)
+  api/          — REST API layer
+    routes.py   — Entry point, route registration
+    auth.py     — Authentication middleware
+```
+
+### Dependency flow
+```
+routes.py → auth.py → core/engine.py → core/parser.py
+                    → shared/config.py
+```
+
+### Type hierarchies
+```
+Base: ImageDiffer
+  ├── PixelDiffer
+  ├── PerceptualDiffer
+  └── StructuralDiffer
+```
+
+## Reference Files
+
+- `references/query-patterns.md` — Tree-sitter `.scm` patterns for Python, TypeScript, Go, Rust (imports, classes, functions, decorators). Usable with both Python bindings and CLI.

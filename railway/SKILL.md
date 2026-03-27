@@ -3,7 +3,7 @@ name: railway
 description: "Railway CLI deployment and management: deploy, logs, databases, domains, environment config, templates. Use for railway up, deploy, debug, manage Railway services."
 ---
 
-<!-- Updated: 2026-02-20 -->
+<!-- Updated: 2026-03-25 -->
 
 # Railway — CLI Deployment & Management
 
@@ -17,10 +17,35 @@ railway whoami --json
 
 ---
 
+## Login
+
+**Browser login DOES NOT WORK from agents/tmux** — Railway's browser flow requires a redirect that fails in headless contexts. The browser opens but shows "Error logging in to CLI. Please try again with `--browserless`".
+
+**ALWAYS use `--browserless`:**
+
+```bash
+# In tmux (interactive window, not -d with echo pipe):
+tmux new-window -d -t pi -n rlogin 'railway login --browserless'
+sleep 3
+tmux capture-pane -t pi:rlogin -p -S -15
+# → Shows pairing URL + 3-word code
+# → User visits URL, enters code, approves
+# → Wait for completion, then:
+railway whoami
+```
+
+**Do NOT use:**
+- `railway login` (browser flow — fails from agents)
+- `railway login --browserless` piped through echo (needs real TTY for prompts)
+- `echo n | railway login` (fails: "Failed to initialize input reader")
+
+---
+
 ## Gotchas
 
 - **No `-m` flag on `railway up`** — current CLI has no `--message`.
 - **No `--lines`/`--tail` on `railway logs`** — it streams forever. Wrap with `timeout 10 railway logs 2>&1` or pipe to `tail`.
+- **`railway login` browser flow broken from agents** — ALWAYS use `railway login --browserless` in tmux. See Login section above.
 - **`railway init`/`railway link` ALWAYS need TTY** — there are NO `--name`, `--workspace`, `--project` flags that bypass interactive prompts. The supposed non-interactive flags don't exist. **Use the GraphQL API instead** (see recipe below).
 - **`projectCreate` REQUIRES `teamId`** (= workspaceId). Without it: `"You must specify a workspaceId"`. Get workspace IDs from `{ me { workspaces { id name } } }`. Personal workspace may have expired trial — use Pro workspace if available.
 - **Rate limit on `projectCreate`**: one project per 30s per user. Sleep between creates.
@@ -292,3 +317,5 @@ For non-TTY project creation/linking, use the GraphQL API recipe above.
 | "No service found" | Add `service` field to config entry (get ID from `railway up` output URL) |
 | "Failed to prompt" (non-TTY) | Use GraphQL API recipe above — `init`/`link` have no non-interactive flags |
 | Logs hang forever | Always wrap: `timeout 10 railway logs 2>&1` |
+| "Unauthorized" / token expired | `railway login --browserless` in tmux — NEVER browser flow from agents |
+| "Error logging in to CLI" in browser | Railway browser login broken from agents. Use `--browserless` with pairing code |

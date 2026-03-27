@@ -42,16 +42,21 @@ PEP 723 inline deps, zero-setup. `plumbum` for shell commands (only lib where pi
 
 **Never generate** venvs, `requirements.txt`, or `deno.json` for throwaway scripts.
 
-## pi-llm — LLM Calls From Scripts
+## pi-llm — LLM Instead of Heuristics
 
-Any script can call pi's LLM (same auth.json, same models) for judgment or research steps:
+**Before writing fuzzy matching, entity resolution, or classification logic** — use `ask()`. It's cheaper than iterating on string algorithms.
+
+| Task | ❌ Don't | ✅ Do |
+|------|---------|-------|
+| "Same hotel?" | Jaccard, identity keywords, compound tokenizer (10 iterations) | `ask("Same hotel? A='X' B='Y'")` — done, first try |
+| "What category?" | regex chains, keyword lists | `ask("Classify: ...")` |
+| "Extract field" | regex with 12 edge cases | `ask("Extract room type from: ...")` |
 
 ```typescript
 import { ask, run } from "~/.pi/agent/lib/pi-llm.ts";
 
-const answer = await ask("Is this critical?", { model: "claude-haiku-4-5" });       // text→text, $0.001
-const result = await run("Research X", { tools: "full", maxTurns: 8 });              // agent+tools, $0.05-0.30
-// result.text, result.cost, result.turns, result.tools
+const answer = await ask("Is this critical?", { model: "claude-haiku-4-5" });       // instant judgment
+const result = await run("Research X", { tools: "full", maxTurns: 8 });              // agent with tools
 ```
 
-Use when a script needs non-deterministic judgment at specific points. `ask()` for cheap yes/no, `run()` for agent that can bash/search/read.
+**Rule**: if you're on iteration 2+ of fixing edge cases in string matching, you already wasted time — should have used `ask()` from the start. Tokens are unlimited (Max subscription). Optimize for results, not cost. See `longrun` skill for batch patterns.
