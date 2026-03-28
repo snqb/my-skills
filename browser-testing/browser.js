@@ -584,6 +584,176 @@ async function run() {
 		return;
 	}
 
+	// ═══ Observe / Assert / Watch ═══
+
+	case "observe": {
+		const id = await activeTab(flags.tab);
+		const scope = pos[0] ? JSON.stringify(pos[0]) : "null";
+		const script = `(() => {
+			const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; };
+			const root = ${scope} ? document.querySelector(${scope}) : document;
+			if (${scope} && !root) return { error: 'selector not found: ' + ${scope} };
+			const r = { url: location.href, title: document.title };
+			r.scroll = { x: window.scrollX, y: window.scrollY, pageW: document.documentElement.scrollWidth, pageH: document.documentElement.scrollHeight, viewH: window.innerHeight };
+			r.inputs = [...root.querySelectorAll('input:not([type=hidden]),textarea,select')].filter(vis).slice(0,20).map(e => {
+				const o = { type: e.type || e.tagName.toLowerCase() };
+				if (e.name) o.name = e.name;
+				if (e.id) o.id = e.id;
+				if (e.value) o.value = e.value.slice(0,100);
+				if (e.placeholder) o.placeholder = e.placeholder;
+				if (e.disabled) o.disabled = true;
+				if (e.tagName === 'SELECT') o.options = [...e.options].map(o => o.text.slice(0,50));
+				return o;
+			});
+			const seen = new Set();
+			r.buttons = [...root.querySelectorAll('button,a[href],[role=button],[type=submit]')].filter(vis).slice(0,40).map(e => {
+				const t = (e.textContent||'').trim().replace(/\\s+/g,' ').slice(0,60);
+				if (!t || t.length < 2 || /^[.#{]/.test(t)) return null;
+				const key = t + (e.getAttribute('href')||'');
+				if (seen.has(key)) return null;
+				seen.add(key);
+				const o = { text: t };
+				if (e.tagName === 'A' && e.href) o.href = e.getAttribute('href');
+				if (e.id) o.id = e.id;
+				if (e.type === 'submit') o.submit = true;
+				return o;
+			}).filter(Boolean).slice(0,25);
+			r.headings = [...root.querySelectorAll('h1,h2,h3')].filter(vis).slice(0,10).map(e => e.textContent.trim().replace(/\\s+/g,' ').slice(0,80));
+			const errs = [...root.querySelectorAll('[class*=error],[class*=alert],[role=alert],.toast,.notification')].filter(vis);
+			r.errors = errs.slice(0,5).map(e => e.textContent.trim().replace(/\\s+/g,' ').slice(0,120)).filter(Boolean);
+			return r;
+		})()`;
+		const data = await api("POST", `/tabs/${id}/execute`, { script, ...shotOpts() });
+		const result = unwrap(data);
+		if (flags.json) return console.log(JSON.stringify(result, null, 2));
+		if (result.error) { console.error(`✗ ${result.error}`); Deno.exit(1); }
+		// Pretty print
+		console.log(`${result.url}`);
+		console.log(`  ${result.title}`);
+		if (result.scroll) {
+			const s = result.scroll;
+			const scrollable = s.pageH > s.viewH;
+			const pct = scrollable ? Math.round((s.y / (s.pageH - s.viewH)) * 100) : 0;
+			console.log(`  ${s.pageW}×${s.pageH}${scrollable ? ` scroll: ${pct}% (${s.y}/${s.pageH - s.viewH}px)` : ' (fits viewport)'}`);
+		}
+		if (result.headings?.length) console.log(`  headings: ${result.headings.join(' | ')}`);
+		if (result.errors?.length) for (const e of result.errors) console.log(`  ⚠ ${e}`);
+		if (result.inputs?.length) {
+			console.log(`  inputs (${result.inputs.length}):`);
+			for (const i of result.inputs)
+				console.log(`    ${i.type}${i.name ? ' name=' + i.name : ''}${i.id ? ' id=' + i.id : ''}${i.value ? ' val="' + i.value + '"' : ''}${i.placeholder ? ' placeholder="' + i.placeholder + '"' : ''}`);
+		}
+		if (result.buttons?.length) {
+			console.log(`  buttons (${result.buttons.length}):`);
+			for (const b of result.buttons) {
+				let href = b.href || '';
+				// Truncate long URLs but keep the path readable
+				if (href.length > 80) {
+					try {
+						const u = new URL(href, result.url);
+						href = u.pathname + (u.search ? '?…' : '');
+					} catch { href = href.slice(0, 80) + '…'; }
+				}
+				console.log(`    "${b.text}"${b.id ? ' id=' + b.id : ''}${href ? ' → ' + href : ''}${b.submit ? ' [submit]' : ''}`);
+			}
+		}
+		if (flags.shot) { const p = saveShot(data, "observe"); if (p) console.log(fileUrl(p)); }
+		printEvents(data);
+		return;
+	}
+
+	case "assert": {
+		const [kind, ...rest] = pos;
+		const value = rest.join(" ");
+		if (!kind || !value) throw new Error("Usage: assert text|selector|url|title <value>");
+		const id = await activeTab(flags.tab);
+		let script;
+		switch (kind) {
+			case "text":
+				script = `document.body.innerText.includes(${JSON.stringify(value)})`; break;
+			case "selector":
+				script = `document.querySelector(${JSON.stringify(value)}) !== null`; break;
+			case "url":
+				script = `location.href.includes(${JSON.stringify(value)})`; break;
+			case "title":
+				script = `document.title.includes(${JSON.stringify(value)})`; break;
+			default:
+				throw new Error(`Unknown assert kind: ${kind}. Use: text|selector|url|title`);
+		}
+		const data = await api("POST", `/tabs/${id}/execute`, { script });
+		const pass = unwrap(data);
+		if (pass) {
+			console.log(`✓ PASS: ${kind} matches "${value}"`);
+		} else {
+			// Give context on failure
+			let actual = "";
+			if (kind === "text") {
+				const textData = await api("POST", `/tabs/${id}/text`, {});
+				actual = (textData?.text || unwrap(textData) || "").slice(0, 300);
+			} else if (kind === "url") {
+				actual = unwrap(await api("POST", `/tabs/${id}/execute`, { script: "location.href" }));
+			} else if (kind === "title") {
+				actual = unwrap(await api("POST", `/tabs/${id}/execute`, { script: "document.title" }));
+			} else if (kind === "selector") {
+				actual = "(element not found)";
+			}
+			console.log(`✗ FAIL: ${kind} does not match "${value}"`);
+			if (actual) console.log(`  actual: ${actual}`);
+			Deno.exit(1);
+		}
+		return;
+	}
+
+	case "watch": {
+		const timeout = Number(flags.timeout) || 10000;
+		const interval = Number(flags.interval) || 500;
+		const id = await activeTab(flags.tab);
+
+		let script;
+		if (flags.text) {
+			script = `document.body.innerText.includes(${JSON.stringify(flags.text)})`;
+		} else if (flags.selector) {
+			script = `document.querySelector(${JSON.stringify(flags.selector)}) !== null`;
+		} else if (flags.url) {
+			script = `location.href.includes(${JSON.stringify(flags.url)})`;
+		} else if (flags.eval) {
+			script = flags.eval;
+		} else {
+			throw new Error("Usage: watch --text|--selector|--url|--eval <expr> [--timeout ms] [--interval ms]");
+		}
+
+		// Resume JS so the page can update
+		try { await api("POST", `/tabs/${id}/execution`, { paused: false }); } catch {}
+
+		const start = Date.now();
+		while (Date.now() - start < timeout) {
+			try {
+				const data = await api("POST", `/tabs/${id}/execute`, { script });
+				if (unwrap(data)) {
+					// Re-pause and settle
+					try { await api("POST", `/tabs/${id}/execution`, { paused: true }); } catch {}
+					try { await api("POST", `/tabs/${id}/wait_for_network`, {}); } catch {}
+					console.log(`✓ matched after ${Date.now() - start}ms`);
+					// Take screenshot if --shot
+					if (flags.shot || flags.markup) {
+						const shotData = await api("POST", `/tabs/${id}/screenshot`, {
+							screenshot: { format: flags.format || "webp", markup: flags.markup === "none" ? [] : flags.markup ? flags.markup.split(",") : "interactive" }
+						});
+						const p = saveShot(shotData, "watch");
+						if (p) console.log(fileUrl(p));
+					}
+					return;
+				}
+			} catch { /* page might be navigating */ }
+			await new Promise(r => setTimeout(r, interval));
+		}
+
+		// Timeout — re-pause and report
+		try { await api("POST", `/tabs/${id}/execution`, { paused: true }); } catch {}
+		console.log(`✗ timeout after ${timeout}ms`);
+		Deno.exit(1);
+	}
+
 	// ═══ Wait ═══
 
 	case "wait": {
@@ -735,6 +905,11 @@ KEYBOARD
   key <KEY>                  Press key [--mod CTRL,SHIFT] [--action down|up]
                              Keys: ENTER TAB ESCAPE BACKSPACE ARROWUP ARROWDOWN
                                    ARROWLEFT ARROWRIGHT DELETE HOME END PAGEUP PAGEDOWN
+
+SMART
+  observe                    Structured page snapshot (URL, title, inputs, buttons, errors)
+  assert text|selector|url|title <val>  Pass/fail check — exit 1 on failure
+  watch --text|--selector|--url|--eval <val> [--timeout ms]  Poll until condition met
 
 HELPERS
   slider <x> <y> <value>     Set range input

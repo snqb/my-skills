@@ -105,13 +105,24 @@ $B slider 400 300 75                 # Set range input to 75
 $B clear 400 300                     # Clear text field (click + select all + delete)
 $B pick "Select the login button"    # Interactive: user clicks element in browser
 
-# Screenshot
+# Observe / Assert / Watch (prefer these — low token cost)
+$B observe                           # Structured page snapshot (~150 tokens)
+$B observe "form"                    # Scoped to CSS selector (~50 tokens)
+$B observe --shot                    # Structured data + screenshot in one call
+$B assert text "Welcome"             # Pass/fail text check (~20 tokens)
+$B assert selector "#dashboard"      # Element exists?
+$B assert url "/dashboard"           # URL contains?
+$B assert title "Dashboard"          # Title contains?
+$B watch --text "Done" --timeout 30000   # Wait for async result
+$B watch --selector ".loaded"        # Wait for element to appear
+$B watch --eval "items.length > 5"   # Wait for JS condition
+$B watch --text "Done" --shot        # Wait + screenshot on match
+
+# Screenshot (only when you need to see layout/visuals)
 $B screenshot                        # Viewport with interactive markup
 $B fullpage                          # Full-page screenshot (scroll + stitch, requires ImageMagick)
-$B fullpage --format png             # Full-page as PNG (default: png)
-$B screenshot --markup clickable     # Only clickable elements
-$B screenshot --markup typeable      # Only input fields
-$B screenshot --markup clickable,typeable,scrollable,grid
+$B screenshot --markup clickable     # Only clickable elements highlighted
+$B screenshot --markup typeable      # Only input fields highlighted
 $B screenshot --markup none          # Clean, no overlays
 $B screenshot --format png           # PNG instead of WebP
 
@@ -377,17 +388,133 @@ $B shutdown --timeout 10000           # Custom timeout
 
 ## Speed Rules
 
-**The fast pattern**: navigate → eval to extract. Skip screenshots unless you're lost.
+### Token Cost Per Command
+
+| Command | ~Tokens | Use when |
+|---------|---------|----------|
+| `eval` | 30–50 | Check DOM state, extract data, verify actions |
+| `assert` | 20–30 | Pass/fail check (text, selector, URL) |
+| `text` | 200–800 | Read visible page text |
+| `observe` | 150–250 | Structured page snapshot (what's interactive) |
+| `screenshot` | ~1500 | Need to see layout/visuals |
+| `content` | 500–3000 | Full article extraction |
+
+### What To Use When (Decision Tree)
+
+```
+"Am I on the right page?"     → eval 'location.href'  or  eval 'document.title'
+"What can I interact with?"   → observe
+"Did my action work?"         → eval (check DOM/URL state)  or  assert
+"What data is on the page?"   → text  or  eval
+"What does it look like?"     → screenshot
+"I'm lost / complex layout"   → screenshot
+"Waiting for async result"    → watch --text "..." --timeout 30000
+```
+
+**Default to eval/text/observe. Escalate to screenshot only when layout matters.**
+
+### Observe — Structured Page Snapshot (~150 tokens)
+
+Use `observe` instead of `screenshot` when you need to know what's on the page but don't need to *see* it:
+
+```bash
+$B observe               # → url, title, headings, inputs, buttons, errors
+$B observe "form"        # Scoped to a CSS selector (~50 tokens)
+$B observe ".modal"      # Just the modal content
+$B observe --shot        # Structured data + screenshot in one call
+$B observe --json        # Raw JSON output
+```
+
+Returns: URL, title, visible interactive elements (inputs with names/values/placeholders, buttons with text/hrefs), headings, and error messages. Only visible elements — hidden inputs and off-screen elements are filtered out. Enough to decide next action without vision.
+
+### Assert — Pass/Fail Verification (~20 tokens)
+
+After actions, verify without vision:
+
+```bash
+$B assert text "Welcome back"        # Page contains text?
+$B assert selector "#dashboard"      # Element exists?
+$B assert url "/dashboard"           # URL contains string?
+$B assert title "Dashboard"          # Title matches?
+```
+
+Returns `✓ PASS` or `✗ FAIL: <context>`. Zero tokens on happy path.
+
+### Watch — Wait For Async UI (~20 tokens)
+
+Don't write polling loops. One command, one result:
+
+```bash
+$B watch --text "Payment complete" --timeout 30000
+$B watch --selector ".loaded" --timeout 5000
+$B watch --url "/success" --timeout 10000
+$B watch --eval "document.querySelectorAll('.item').length >= 10" --timeout 5000
+```
+
+Resumes JS, polls internally, returns when matched or timed out.
+
+### Core Speed Rules
 
 1. **Start ABP first**: `browser.js start`
-2. **Don't screenshot every step**: Skip `--shot` during form-filling. Only screenshot when you need to see layout.
-3. **Observe the URL after search**: Most SPAs encode filters in URL params. Copy it, modify it, `nav` directly next time — skip the form entirely.
-4. **Extract data via `eval`, not vision**: One JS query extracts 10 results faster than scrolling + screenshotting.
-5. **Batch related inputs**: Click + type + Enter = one `batch` call instead of three.
-6. **Use `text` for simple data**: `text` is faster than `eval` for plain text extraction.
-7. **Use `network` for slow pages**: After nav to an SPA, `network` waits for all pending XHR/fetch to complete.
-8. **Use pick for ambiguity**: When coordinates are unclear, let the user click.
+2. **Don't screenshot every step**: Only screenshot when you need to see layout/visuals.
+3. **Use `observe` as default awareness**: After nav or complex actions, `observe` gives page state in ~150 tokens vs ~1500 for a screenshot.
+4. **Use `assert` for verification**: After form submission, `assert text "Success"` — not screenshot + read.
+5. **Observe the URL after search**: Most SPAs encode filters in URL params. Copy it, modify it, `nav` directly next time.
+6. **Extract data via `eval`, not vision**: One JS query extracts 10 results faster than scrolling + screenshotting.
+7. **Batch related inputs**: Click + type + Enter = one `batch` call instead of three.
+8. **Use `text` for simple data**: `text` is faster than `eval` for plain text extraction.
+9. **Use `watch` instead of polling loops**: When waiting for loading/async results.
+10. **Use `network` for slow pages**: After nav to an SPA, `network` waits for all pending XHR/fetch to complete.
+11. **Use pick for ambiguity**: When coordinates are unclear, let the user click.
 
-**Anti-pattern**: click → screenshot → read image → decide → click → screenshot → ... (each step: ~3s for screenshot + LLM vision round-trip)
+### Anti-Pattern
 
-**Fast pattern**: nav → click click click (no shots) → eval to extract all data → screenshot once to verify
+```
+click → screenshot → read image → decide → click → screenshot → ...
+(each step: ~3s for screenshot + LLM vision round-trip)
+```
+
+### Fast Patterns
+
+**Blind execution** (known flow):
+```bash
+$B nav https://app.com
+$B click 450 300          # login button
+$B type user@example.com
+$B key TAB
+$B type mysecretpassword
+$B key ENTER
+$B assert text "Dashboard"   # verify once at the end
+```
+
+**Explore then act** (unknown page):
+```bash
+$B nav https://app.com
+$B observe                # structured snapshot, 150 tokens
+# Now you know what's on the page — act on it
+$B click 450 300
+$B assert url "/profile"
+```
+
+**Data extraction** (scraping):
+```bash
+$B nav https://shop.com/products
+$B eval '([...document.querySelectorAll(".product")].map(e => ({name: e.querySelector("h2").textContent, price: e.querySelector(".price").textContent})))'
+# One call, all data. No scrolling, no screenshots.
+```
+
+**Multi-page parallel** (compare/verify across pages):
+```bash
+$B nav https://app.com/page1 --new    # tab 1
+$B nav https://app.com/page2 --new    # tab 2
+$B nav https://app.com/page3 --new    # tab 3
+# Work each tab independently via --tab <id>
+# Merge results at the end
+```
+
+**Async wait** (payment, loading):
+```bash
+$B click 500 400                           # submit payment
+$B watch --text "Payment confirmed" --timeout 30000   # wait, don't poll
+$B screenshot                              # visual confirmation
+```
