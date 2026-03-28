@@ -4,8 +4,37 @@
 
 import { decodeBase64 } from "jsr:@std/encoding@^1/base64";
 
-const API = "http://localhost:8222/api/v1";
 const HOME = Deno.env.get("HOME") || "/tmp";
+
+// ── Port Resolution ──
+// Priority: --port flag > ABP_PORT env > hash(project root) → 9222-19221
+
+function projectRoot() {
+	let dir = Deno.cwd();
+	while (true) {
+		try { if (Deno.statSync(`${dir}/.git`).isDirectory) return dir; } catch {}
+		const parent = dir.replace(/\/[^/]+$/, "");
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return Deno.cwd();
+}
+
+function resolvePort() {
+	if (flags.port) return Number(flags.port);
+	const envPort = Deno.env.get("ABP_PORT");
+	if (envPort) return Number(envPort);
+	const root = projectRoot();
+	let h = 0;
+	for (let i = 0; i < root.length; i++) h = ((h << 5) - h + root.charCodeAt(i)) | 0;
+	return 9222 + (Math.abs(h) % 10000);
+}
+
+let PORT, API;
+function initAPI() {
+	PORT = resolvePort();
+	API = `http://localhost:${PORT}/api/v1`;
+}
 
 // ── HTTP ──
 
@@ -24,20 +53,40 @@ function unwrap(data) {
 	return r && typeof r === "object" && "value" in r ? r.value : r;
 }
 
+function startArgs() {
+	const args = ["-y", "agent-browser-protocol", "--port", String(PORT)];
+	const dir = flags["session-dir"] || `${HOME}/.cache/browser-tools`;
+	args.push("--session-dir", dir);
+	if (flags.headless) args.push("--headless");
+	if (flags.verbose) args.push("--verbose");
+	if (flags["user-data-dir"]) args.push("--user-data-dir", flags["user-data-dir"]);
+	if (flags["profile-directory"]) args.push("--profile-directory", flags["profile-directory"]);
+	if (flags["user-agent"]) args.push("--user-agent", flags["user-agent"]);
+	if (flags.zoom) args.push("--zoom", flags.zoom);
+	if (flags["min-wait"]) args.push("--min-wait", flags["min-wait"]);
+	if (flags["tracking-timeout"]) args.push("--tracking-timeout", flags["tracking-timeout"]);
+	if (flags["post-settle"]) args.push("--post-settle", flags["post-settle"]);
+	if (flags["disable-pause"]) args.push("--disable-pause");
+	if (flags["config-file"]) args.push("--config-file", flags["config-file"]);
+	// Chrome flags after --
+	if (flags["chrome-args"]) { args.push("--"); args.push(...flags["chrome-args"].split(",")); }
+	return { args, dir };
+}
+
 async function ensureRunning() {
 	try { await fetch(`${API}/browser/status`); return; } catch {}
-	console.error("⟳ ABP down, restarting...");
-	const dir = `${HOME}/.cache/browser-tools`;
+	console.error(`⟳ ABP down, starting on :${PORT}...`);
+	const { args, dir } = startArgs();
 	await Deno.mkdir(dir, { recursive: true });
 	new Deno.Command("npx", {
-		args: ["-y", "agent-browser-protocol", "--port", "8222", "--session-dir", dir],
+		args,
 		stdin: "null", stdout: "null", stderr: "null",
 	}).spawn().unref();
 	for (let i = 0; i < 60; i++) {
-		try { if ((await fetch(`${API}/browser/status`)).ok) { console.error("✓ ABP restarted"); return; } } catch {}
+		try { if ((await fetch(`${API}/browser/status`)).ok) { console.error(`✓ ABP started on :${PORT}`); return; } } catch {}
 		await new Promise(r => setTimeout(r, 500));
 	}
-	throw new Error("Failed to restart ABP");
+	throw new Error(`Failed to start ABP on :${PORT}`);
 }
 
 async function activeTab(id) {
@@ -60,17 +109,19 @@ function shotDir() {
 			return dir;
 		}
 	} catch { /* no .git */ }
-	const tmp = Deno.env.get("TMPDIR") || "/tmp";
-	const dir = `${tmp}/browser-${Deno.pid}`;
-	try { Deno.mkdirSync(dir); } catch { /* exists */ }
+	const dir = `${HOME}/.cache/abp-screenshots`;
+	try { Deno.mkdirSync(dir, { recursive: true }); } catch { /* exists */ }
 	return dir;
 }
 
 function saveShot(envelope, label) {
 	const s = envelope?.screenshot_after;
 	if (!s?.data) return null;
-	const ts = new Date().toISOString().replace(/[:.]/g, "-");
-	const p = `${shotDir()}/${label || "shot"}-${ts}.${s.format || "webp"}`;
+	const d = new Date();
+	const ts = [d.getFullYear(), d.getMonth()+1, d.getDate()].map(n => String(n).padStart(2,"0")).join("")
+		+ "-" + [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2,"0")).join("");
+	const fmt = s.format || "webp";
+	const p = `${shotDir()}/${label || "shot"}-${ts}.${fmt}`;
 	Deno.writeFileSync(p, decodeBase64(s.data));
 	return p;
 }
@@ -92,11 +143,13 @@ function printEvents(data) {
 	}
 }
 
+function fileUrl(p) { return `file://${p}`; }
+
 function out(data, label) {
 	if (flags.json) return console.log(JSON.stringify(data, null, 2));
 	if (flags.shot || flags.markup) {
 		const p = saveShot(data, label);
-		if (p) console.log(p);
+		if (p) console.log(fileUrl(p));
 	}
 	printEvents(data);
 	if (data?.scroll && ["scroll", "nav", "screenshot"].includes(cmd)) {
@@ -152,6 +205,9 @@ const pickJS = (msg) => `(async () => {
 	});
 })()`;
 
+// ── Init (after args parsed) ──
+initAPI();
+
 // ── Commands ──
 
 async function run() {
@@ -161,7 +217,12 @@ async function run() {
 
 	case "start": {
 		await ensureRunning();
-		console.log("✓ ABP running on :8222");
+		console.log(`✓ ABP running on :${PORT} (${projectRoot()})`);
+		return;
+	}
+
+	case "port": {
+		console.log(PORT);
 		return;
 	}
 
@@ -296,6 +357,70 @@ async function run() {
 
 	// ═══ Screenshot & Content ═══
 
+	case "fullpage": {
+		const id = await activeTab(flags.tab);
+		const fmt = flags.format || "png";
+		// Get page dimensions
+		const dims = unwrap(await api("POST", `/tabs/${id}/execute`, {
+			script: "({ w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight, vw: window.innerWidth, vh: window.innerHeight })"
+		}));
+		const { w, h, vw, vh } = dims;
+		// Scroll to top first
+		await api("POST", `/tabs/${id}/execute`, { script: "window.scrollTo(0, 0)" });
+		await api("POST", `/tabs/${id}/wait`, { ms: 100 });
+		// Capture viewport-sized chunks
+		const chunks = [];
+		const dir = shotDir();
+		let y = 0;
+		while (y < h) {
+			await api("POST", `/tabs/${id}/execute`, { script: `window.scrollTo(0, ${y})` });
+			await api("POST", `/tabs/${id}/wait`, { ms: 150 });
+			const data = await api("POST", `/tabs/${id}/screenshot`, {
+				screenshot: { format: fmt, markup: "none" }
+			});
+			const s = data?.screenshot_after;
+			if (!s?.data) throw new Error("No screenshot data at offset " + y);
+			const chunkPath = `${dir}/_chunk-${y}.${fmt}`;
+			Deno.writeFileSync(chunkPath, decodeBase64(s.data));
+			chunks.push({ path: chunkPath, y, cropH: Math.min(vh, h - y) });
+			y += vh;
+		}
+		// Stitch with ImageMagick — crop last chunk if partial, then append vertically
+		const d = new Date();
+		const ts = [d.getFullYear(), d.getMonth()+1, d.getDate()].map(n => String(n).padStart(2,"0")).join("")
+			+ "-" + [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2,"0")).join("");
+		const outPath = `${dir}/fullpage-${ts}.${fmt}`;
+		const cropArgs = [];
+		for (let i = 0; i < chunks.length; i++) {
+			const c = chunks[i];
+			if (i === chunks.length - 1 && c.cropH < vh) {
+				// Crop the last chunk to actual remaining height
+				const cropped = `${dir}/_chunk-${c.y}-cropped.${fmt}`;
+				const proc = new Deno.Command("magick", {
+					args: [c.path, "-crop", `${vw}x${c.cropH}+0+0`, "+repage", cropped],
+				});
+				const r = proc.outputSync();
+				if (r.code !== 0) throw new Error("magick crop failed: " + new TextDecoder().decode(r.stderr));
+				cropArgs.push(cropped);
+			} else {
+				cropArgs.push(c.path);
+			}
+		}
+		const stitchProc = new Deno.Command("magick", {
+			args: [...cropArgs, "-append", outPath],
+		});
+		const stitchResult = stitchProc.outputSync();
+		if (stitchResult.code !== 0) throw new Error("magick stitch failed: " + new TextDecoder().decode(stitchResult.stderr));
+		// Clean up chunks
+		for (const c of chunks) try { Deno.removeSync(c.path); } catch {}
+		for (const f of cropArgs) { if (f.includes("-cropped.")) try { Deno.removeSync(f); } catch {} }
+		// Restore scroll position
+		await api("POST", `/tabs/${id}/execute`, { script: "window.scrollTo(0, 0)" });
+		console.log(fileUrl(outPath));
+		console.log(`  ${w}×${h} (${chunks.length} chunks)`);
+		return;
+	}
+
 	case "screenshot": {
 		const id = await activeTab(flags.tab);
 		const body = { screenshot: {
@@ -307,7 +432,7 @@ async function run() {
 		const data = await api("POST", `/tabs/${id}/screenshot`, body);
 		if (flags.json) return console.log(JSON.stringify(data, null, 2));
 		const p = saveShot(data, "screenshot");
-		if (p) console.log(p);
+		if (p) console.log(fileUrl(p));
 		else console.error("✗ No screenshot data");
 		printEvents(data);
 		return;
@@ -329,7 +454,7 @@ async function run() {
 		const result = unwrap(data);
 		if (result !== undefined && result !== null)
 			console.log(typeof result === "object" ? JSON.stringify(result, null, 2) : result);
-		if (flags.shot) { const p = saveShot(data, "eval"); if (p) console.log(p); }
+		if (flags.shot) { const p = saveShot(data, "eval"); if (p) console.log(fileUrl(p)); }
 		printEvents(data);
 		return;
 	}
@@ -414,10 +539,19 @@ async function run() {
 
 	case "download": {
 		const [action = "list", arg] = pos;
-		if (action === "list") console.log(JSON.stringify(await api("GET", "/downloads"), null, 2));
+		if (action === "list") {
+			const params = [];
+			if (flags.state) params.push(`state=${flags.state}`);
+			if (flags.limit) params.push(`limit=${flags.limit}`);
+			const qs = params.length ? `?${params.join("&")}` : "";
+			console.log(JSON.stringify(await api("GET", `/downloads${qs}`), null, 2));
+		}
 		else if (action === "status") console.log(JSON.stringify(await api("GET", `/downloads/${arg}`), null, 2));
 		else if (action === "cancel") { await api("POST", `/downloads/${arg}/cancel`); console.log("✓"); }
-		else if (action === "get") console.log(JSON.stringify(await api("GET", `/downloads/${arg}/content`), null, 2));
+		else if (action === "get") {
+			const qs = flags["max-size"] ? `?max_size=${flags["max-size"]}` : "";
+			console.log(JSON.stringify(await api("GET", `/downloads/${arg}/content${qs}`), null, 2));
+		}
 		else throw new Error(`Unknown: download ${action}`);
 		return;
 	}
@@ -458,6 +592,64 @@ async function run() {
 		const id = await activeTab(flags.tab);
 		out(await api("POST", `/tabs/${id}/wait`, { ms, ...shotOpts() }), "wait");
 		console.log(`✓ ${ms}ms`);
+		return;
+	}
+
+	case "network": {
+		const id = await activeTab(flags.tab);
+		out(await api("POST", `/tabs/${id}/wait_for_network`, shotOpts()), "network");
+		console.log("✓ network settled");
+		return;
+	}
+
+	case "console": {
+		// Inject console capture, execute JS, collect logs
+		const id = await activeTab(flags.tab);
+		const install = `(() => {
+			if (window.__abpConsole) return 'already installed';
+			window.__abpConsole = [];
+			const orig = {};
+			for (const m of ['log','warn','error','info','debug']) {
+				orig[m] = console[m];
+				console[m] = (...args) => {
+					window.__abpConsole.push({ level: m, ts: Date.now(), args: args.map(a => {
+						try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch { return String(a); }
+					})});
+					orig[m].apply(console, args);
+				};
+			}
+			window.addEventListener('error', e => window.__abpConsole.push({ level: 'exception', ts: Date.now(), args: [e.message, e.filename + ':' + e.lineno] }));
+			window.addEventListener('unhandledrejection', e => window.__abpConsole.push({ level: 'rejection', ts: Date.now(), args: [String(e.reason)] }));
+			return 'installed';
+		})()`;
+		const drain = `(() => {
+			if (!window.__abpConsole) return '[]';
+			const logs = JSON.stringify(window.__abpConsole);
+			window.__abpConsole = [];
+			return logs;
+		})()`;
+
+		const [action = "drain"] = pos;
+		if (action === "install") {
+			const r = unwrap(await api("POST", `/tabs/${id}/execute`, { script: install }));
+			console.log(`✓ console capture ${r}`);
+		} else if (action === "drain") {
+			const r = unwrap(await api("POST", `/tabs/${id}/execute`, { script: drain }));
+			const logs = JSON.parse(r || "[]");
+			if (!logs.length) return console.log("(no console output)");
+			for (const l of logs) {
+				const icon = { error: "✗", warn: "⚠", exception: "💥", rejection: "💥" }[l.level] || "·";
+				console.log(`${icon} [${l.level}] ${l.args.join(" ")}`);
+			}
+		} else if (action === "clear") {
+			await api("POST", `/tabs/${id}/execute`, { script: "window.__abpConsole = []" });
+			console.log("✓ cleared");
+		} else throw new Error("Usage: console [install|drain|clear]");
+		return;
+	}
+
+	case "session-data": {
+		console.log(JSON.stringify(await api("GET", "/browser/session-data"), null, 2));
 		return;
 	}
 
@@ -503,26 +695,34 @@ async function run() {
 	// ═══ History ═══
 
 	case "history": {
-		const [action = "sessions"] = pos;
+		const [action = "sessions", arg] = pos;
 		if (action === "sessions") return console.log(JSON.stringify(await api("GET", "/history/sessions"), null, 2));
 		if (action === "current") return console.log(JSON.stringify(await api("GET", "/history/sessions/current"), null, 2));
+		if (action === "session" && arg) return console.log(JSON.stringify(await api("GET", `/history/sessions/${arg}`), null, 2));
+		if (action === "export" && arg) return console.log(JSON.stringify(await api("GET", `/history/sessions/${arg}/export`), null, 2));
 		if (action === "actions") return console.log(JSON.stringify(await api("GET", "/history/actions"), null, 2));
+		if (action === "action" && arg) return console.log(JSON.stringify(await api("GET", `/history/actions/${arg}`), null, 2));
+		if (action === "events") return console.log(JSON.stringify(await api("GET", "/history/events"), null, 2));
+		if (action === "event" && arg) return console.log(JSON.stringify(await api("GET", `/history/events/${arg}`), null, 2));
 		if (action === "clear") { await api("DELETE", "/history"); console.log("✓ cleared"); return; }
-		throw new Error(`Unknown: history ${action}`);
+		throw new Error(`Unknown: history ${action}${arg ? " " + arg : ""}`);
 	}
 
 	// ═══ Help ═══
 
 	default:
 		console.log(`ABP Browser CLI — full Agent Browser Protocol access
+Port: ${PORT} (from ${flags.port ? "--port flag" : Deno.env.get("ABP_PORT") ? "ABP_PORT env" : `hash of ${projectRoot()}`})
 
 BROWSE
   nav <url> [--new]          Navigate (--new for new tab)
   back | forward | reload    History navigation
   screenshot                 Capture viewport
+  fullpage                   Full-page screenshot (scroll + stitch via ImageMagick)
   text [selector]            Visible text (API, fast)
   content [url]              Article as Markdown (Readability)
   eval '<code>'              Execute JavaScript
+  cookies                    View non-HttpOnly cookies
 
 MOUSE
   click <x> <y>              Click [--right] [--double] [--mod CTRL,SHIFT]
@@ -541,8 +741,14 @@ HELPERS
   clear <x> <y>              Clear text field (click+select all+delete)
   pick [message]             Interactive element picker (user clicks in browser)
   wait <ms>                  Wait duration
+  network                    Wait for pending network requests to settle
   batch '<json>'             Multiple actions in one call
-  cookies                    View non-HttpOnly cookies
+
+DEEP ACCESS
+  console install            Inject console/error/rejection capture into page
+  console drain              Retrieve captured console logs (then clear buffer)
+  console clear              Clear captured logs
+  eval '<js>'                Execute any JS in page context (full DOM/API access)
 
 TABS
   tabs                       List all tabs
@@ -550,25 +756,57 @@ TABS
   tabs close|activate|info|stop <id>
 
 EVENTS
-  dialog [check|accept|dismiss]    JS dialogs (alert/confirm/prompt)
-  download [list|status|cancel|get]  Manage downloads
-  file <id> <paths...>             Respond to file chooser [--cancel] [--save path]
-  select <id> <index>              Native <select> dropdown
-  permission [list|grant|deny]     Permission prompts [--lat N --lng N]
+  dialog [check|accept|dismiss]      JS dialogs (alert/confirm/prompt)
+  download [list|status|cancel|get]  Downloads [--state X] [--limit N] [--max-size N]
+  file <id> <paths...>               File chooser [--cancel] [--save path]
+  select <id> <index>                Native <select> dropdown
+  permission [list|grant|deny]       Permissions [--lat N --lng N]
 
 CONTROL
-  start                      Launch ABP on :8222
+  start                      Launch ABP (auto-port per project)
+  port                       Show resolved port
   status                     Browser status
+  session-data               Session directory & database paths
   shutdown                   Graceful shutdown [--timeout ms]
   execution [status|pause|resume]  JS execution & virtual time
-  history [sessions|current|actions|clear]
 
-FLAGS (any command)
+HISTORY
+  history [sessions]                 List sessions
+  history current                    Current session
+  history session <id>               Session details
+  history export <id>                Export session data
+  history actions                    Action log
+  history action <id>                Single action detail
+  history events                     Browser events log
+  history event <id>                 Single event detail
+  history clear                      Delete all history
+
+START FLAGS (passed to ABP on launch)
+  --headless                 No visible window
+  --verbose                  Pipe browser output to stderr
+  --user-data-dir <path>     Chrome profile data directory
+  --profile-directory <name> Chrome profile name
+  --user-agent <string>      Custom User-Agent
+  --zoom <factor>            Zoom level (default: 1.0)
+  --min-wait <ms>            Pre-network settlement (default: 150)
+  --tracking-timeout <ms>    Network request tracking timeout (default: 1000)
+  --post-settle <ms>         Post-network settle time (default: 350)
+  --disable-pause            Don't freeze JS between actions
+  --config-file <path>       ABP JSON config file
+  --session-dir <path>       Session data directory
+  --chrome-args <a,b,c>      Extra Chrome flags (comma-separated)
+
+GLOBAL FLAGS (any command)
   --tab <id>       Target specific tab (default: active)
+  --port <N>       Override port (default: auto per project)
   --shot           Include screenshot in response
   --markup <X>     interactive | clickable,typeable,scrollable,grid,selected | none
   --format <X>     webp (default) | png | jpeg
-  --json           Raw JSON response`);
+  --json           Raw JSON response
+
+PORT RESOLUTION (no config needed)
+  Auto-derives a unique port per project from git root path (9222-19221).
+  Override: --port <N> (any command) or ABP_PORT env var.`);
 	}
 }
 
