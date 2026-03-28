@@ -1,4 +1,5 @@
 ---
+name: grafana-dashboard-validation
 description: Pre-deployment validation for Grafana dashboards to catch errors before they reach production.
 ---
 

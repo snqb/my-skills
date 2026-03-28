@@ -1,11 +1,13 @@
 ---
 name: obsidian-monograph
-description: "Research and write deep-dive monograph articles for the Obsidian vault at ~/obsidian/obs. Multi-source research → Gwern-voice prose → Wikipedia links → Wikimedia Commons images → footnotes. Use when asked to write an article, deep dive, or create a read about any topic for the vault."
+description: "Research and write deep-dive monograph articles for an Obsidian vault. Multi-source research → Gwern-voice prose → Wikipedia links → Wikimedia Commons images → footnotes. Use when asked to write an article, deep dive, or create a read about any topic for the vault."
 ---
 
 # Obsidian Monograph
 
-End-to-end pipeline: research a topic deeply, then write a long-form article for the personal Obsidian knowledge vault at `~/obsidian/obs/`.
+End-to-end pipeline: research a topic deeply, then write a long-form article for a personal Obsidian knowledge vault.
+
+**Configure**: Set `OBSIDIAN_VAULT` env var or default to `~/obsidian/obs/`.
 
 ## When to Load
 
@@ -13,12 +15,12 @@ End-to-end pipeline: research a topic deeply, then write a long-form article for
 - "deep dive into X"
 - "create an article / read / monograph about X"
 - "research X and write it up"
-- Any request that ends with output to `~/obsidian/obs/`
+- Any request that ends with output to the vault
 
 ## Vault Location & Folders
 
 ```
-~/obsidian/obs/          ← Obsidian vault root
+$OBSIDIAN_VAULT/         ← Obsidian vault root (default: ~/obsidian/obs/)
 ├── AI/                  ← Tech, CS, ML, software (English)
 ├── Геополитика/         ← Geopolitics, intelligence, revolutions (Russian)
 ├── Ислам/               ← Islam, Quran, Prophet (Russian)
@@ -26,7 +28,7 @@ End-to-end pipeline: research a topic deeply, then write a long-form article for
 └── Химия/               ← Chemistry, cosmetics (Russian)
 ```
 
-Pick the right folder. If none fits, create a new one (Russian name for Russian topics, English for English topics). Tech topics default to `AI/`.
+Pick the right folder. If none fits, create a new one (Russian name for Russian topics, English for English topics). Tech topics default to `AI/`. Adapt folder structure to your vault.
 
 ## Phase 1: Research
 
@@ -259,14 +261,14 @@ grep -c '^!\[' "$FILE"
 
 ```bash
 # Save to correct folder
-# English tech → ~/obsidian/obs/AI/
-# Russian geopolitics → ~/obsidian/obs/Геополитика/
+# English tech → $OBSIDIAN_VAULT/AI/
+# Russian geopolitics → $OBSIDIAN_VAULT/Геополитика/
 # etc.
 ```
 
 Print clickable path:
 ```
-file:///Users/sn/obsidian/obs/AI/Article%20Title.md
+file://$OBSIDIAN_VAULT/AI/Article%20Title.md
 ```
 
 ## Quick Reference: Research Queries Per Topic Type

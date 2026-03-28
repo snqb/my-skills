@@ -1,5 +1,6 @@
 ---
-description: Elixir development specialist skill, focusing on Ash Framework, Phoenix, code quality (Credo), and LLM interaction safety.
+name: elixir
+description: "Elixir development: Ash Framework, Phoenix, Credo, LLM interaction safety. Use when working on Elixir/Ash/Phoenix projects."
 ---
 
 # Elixir Development Specialist

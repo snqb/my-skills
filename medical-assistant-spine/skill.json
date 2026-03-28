@@ -1,0 +1,8 @@
+{
+  "name": "medical-assistant-spine",
+  "version": "1.0.0",
+  "description": "Медицинский ассистент по проблемам шейного отдела позвоночника. Конкретные диагнозы, дозировки, схемы лечения.",
+  "author": "sn",
+  "tags": ["medical", "spine", "neurology", "russian"],
+  "files": ["instructions.md"]
+}

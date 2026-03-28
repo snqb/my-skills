@@ -51,12 +51,26 @@ async function activeTab(id) {
 
 // ── Screenshot & Events ──
 
+function shotDir() {
+	try {
+		const git = Deno.cwd() + "/.git";
+		if (Deno.statSync(git).isDirectory) {
+			const dir = git + "/screenshots";
+			try { Deno.mkdirSync(dir); } catch { /* exists */ }
+			return dir;
+		}
+	} catch { /* no .git */ }
+	const tmp = Deno.env.get("TMPDIR") || "/tmp";
+	const dir = `${tmp}/browser-${Deno.pid}`;
+	try { Deno.mkdirSync(dir); } catch { /* exists */ }
+	return dir;
+}
+
 function saveShot(envelope, label) {
 	const s = envelope?.screenshot_after;
 	if (!s?.data) return null;
 	const ts = new Date().toISOString().replace(/[:.]/g, "-");
-	const tmp = Deno.env.get("TMPDIR") || "/tmp";
-	const p = `${tmp}/${label || "shot"}-${ts}.${s.format || "webp"}`;
+	const p = `${shotDir()}/${label || "shot"}-${ts}.${s.format || "webp"}`;
 	Deno.writeFileSync(p, decodeBase64(s.data));
 	return p;
 }

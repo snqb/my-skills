@@ -1,4 +1,5 @@
 ---
+name: book-downloader
 description: Search and download academic books, textbooks, and publications from Library Genesis (LibGen) programmatically.
 ---
 

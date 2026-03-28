@@ -1,4 +1,5 @@
 ---
+name: research
 description: Deep multi-source research by orchestrating exa-search (semantic), serper-search (Google SERP), github-quality-search (Code), and hn-research (Trends/Sentiment). Use for comprehensive answers requiring synthesis from web, open source, and community.
 ---
 

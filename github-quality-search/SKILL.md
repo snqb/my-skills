@@ -1,4 +1,5 @@
 ---
+name: github-quality-search
 description: Search GitHub for high-quality libraries with strict quality filters (100+ stars, active maintenance, documentation)
 ---
 
