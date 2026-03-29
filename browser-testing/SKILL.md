@@ -120,7 +120,7 @@ $B watch --text "Done" --shot        # Wait + screenshot on match
 
 # Screenshot (only when you need to see layout/visuals)
 $B screenshot                        # Viewport with interactive markup
-$B fullpage                          # Full-page screenshot (scroll + stitch, requires ImageMagick)
+$B fullpage                          # Full-page screenshot (scroll + stitch, pure Deno)
 $B screenshot --markup clickable     # Only clickable elements highlighted
 $B screenshot --markup typeable      # Only input fields highlighted
 $B screenshot --markup none          # Clean, no overlays

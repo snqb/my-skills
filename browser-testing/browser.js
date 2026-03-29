@@ -359,61 +359,47 @@ async function run() {
 
 	case "fullpage": {
 		const id = await activeTab(flags.tab);
-		const fmt = flags.format || "png";
+		const { Buffer } = await import("node:buffer");
+		const { PNG } = await import("npm:pngjs@7.0.0");
 		// Get page dimensions
 		const dims = unwrap(await api("POST", `/tabs/${id}/execute`, {
 			script: "({ w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight, vw: window.innerWidth, vh: window.innerHeight })"
 		}));
 		const { w, h, vw, vh } = dims;
-		// Scroll to top first
+		// Scroll to top
 		await api("POST", `/tabs/${id}/execute`, { script: "window.scrollTo(0, 0)" });
 		await api("POST", `/tabs/${id}/wait`, { ms: 100 });
-		// Capture viewport-sized chunks
+		// Capture viewport-sized chunks as raw PNG buffers
 		const chunks = [];
-		const dir = shotDir();
 		let y = 0;
 		while (y < h) {
 			await api("POST", `/tabs/${id}/execute`, { script: `window.scrollTo(0, ${y})` });
 			await api("POST", `/tabs/${id}/wait`, { ms: 150 });
 			const data = await api("POST", `/tabs/${id}/screenshot`, {
-				screenshot: { format: fmt, markup: "none" }
+				screenshot: { format: "png", markup: "none" }
 			});
 			const s = data?.screenshot_after;
 			if (!s?.data) throw new Error("No screenshot data at offset " + y);
-			const chunkPath = `${dir}/_chunk-${y}.${fmt}`;
-			Deno.writeFileSync(chunkPath, decodeBase64(s.data));
-			chunks.push({ path: chunkPath, y, cropH: Math.min(vh, h - y) });
+			chunks.push({ buf: decodeBase64(s.data), cropH: Math.min(vh, h - y) });
 			y += vh;
 		}
-		// Stitch with ImageMagick — crop last chunk if partial, then append vertically
+		// Stitch in-memory with pngjs — no temp files, no external tools
+		const out = new PNG({ width: vw, height: h });
+		let destY = 0;
+		for (const c of chunks) {
+			const src = PNG.sync.read(Buffer.from(c.buf));
+			const rowBytes = vw * 4;
+			for (let row = 0; row < c.cropH; row++) {
+				src.data.copy(out.data, (destY + row) * rowBytes, row * rowBytes, row * rowBytes + rowBytes);
+			}
+			destY += c.cropH;
+		}
+		const outBuf = PNG.sync.write(out);
 		const d = new Date();
 		const ts = [d.getFullYear(), d.getMonth()+1, d.getDate()].map(n => String(n).padStart(2,"0")).join("")
 			+ "-" + [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2,"0")).join("");
-		const outPath = `${dir}/fullpage-${ts}.${fmt}`;
-		const cropArgs = [];
-		for (let i = 0; i < chunks.length; i++) {
-			const c = chunks[i];
-			if (i === chunks.length - 1 && c.cropH < vh) {
-				// Crop the last chunk to actual remaining height
-				const cropped = `${dir}/_chunk-${c.y}-cropped.${fmt}`;
-				const proc = new Deno.Command("magick", {
-					args: [c.path, "-crop", `${vw}x${c.cropH}+0+0`, "+repage", cropped],
-				});
-				const r = proc.outputSync();
-				if (r.code !== 0) throw new Error("magick crop failed: " + new TextDecoder().decode(r.stderr));
-				cropArgs.push(cropped);
-			} else {
-				cropArgs.push(c.path);
-			}
-		}
-		const stitchProc = new Deno.Command("magick", {
-			args: [...cropArgs, "-append", outPath],
-		});
-		const stitchResult = stitchProc.outputSync();
-		if (stitchResult.code !== 0) throw new Error("magick stitch failed: " + new TextDecoder().decode(stitchResult.stderr));
-		// Clean up chunks
-		for (const c of chunks) try { Deno.removeSync(c.path); } catch {}
-		for (const f of cropArgs) { if (f.includes("-cropped.")) try { Deno.removeSync(f); } catch {} }
+		const outPath = `${shotDir()}/fullpage-${ts}.png`;
+		Deno.writeFileSync(outPath, outBuf);
 		// Restore scroll position
 		await api("POST", `/tabs/${id}/execute`, { script: "window.scrollTo(0, 0)" });
 		console.log(fileUrl(outPath));
@@ -888,7 +874,7 @@ BROWSE
   nav <url> [--new]          Navigate (--new for new tab)
   back | forward | reload    History navigation
   screenshot                 Capture viewport
-  fullpage                   Full-page screenshot (scroll + stitch via ImageMagick)
+  fullpage                   Full-page screenshot (scroll + stitch, pure Deno)
   text [selector]            Visible text (API, fast)
   content [url]              Article as Markdown (Readability)
   eval '<code>'              Execute JavaScript
