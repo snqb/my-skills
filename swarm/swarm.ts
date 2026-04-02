@@ -194,13 +194,18 @@ const handlerCode = await Deno.readTextFile(HANDLER_PATH);
 const handlerB64 = btoa(handlerCode);
 
 // Split items into chunks
-const chunkSize = Math.ceil(items.length / WORKERS);
+const MAX_ITEMS_PER_WORKER = 200; // Railway env var 32KB limit
+const chunkSize = Math.min(Math.ceil(items.length / WORKERS), MAX_ITEMS_PER_WORKER);
 const chunks: string[][] = [];
 for (let i = 0; i < items.length; i += chunkSize) {
   chunks.push(items.slice(i, i + chunkSize));
 }
 const actualWorkers = chunks.length;
-console.error(`📊 ${actualWorkers} workers, ~${chunkSize} items each`);
+if (actualWorkers > 50) {
+  console.error(`⚠️  ${actualWorkers} workers needed (${items.length} items / ${chunkSize} per worker). Max 50. Truncating.`);
+  chunks.splice(50);
+}
+console.error(`📊 ${chunks.length} workers, ~${chunkSize} items each`);
 
 // Compress each chunk to base64
 const chunkData: string[] = [];

@@ -20,7 +20,9 @@ One skill to load for any visual work. Routes to specialized sub-skills by task 
 | **shadcn/ui** (accessible primitives, MCP server) | `shadcn-ui` | `~/.pi/agent/skills/shadcn-ui/SKILL.md` |
 | **Static art** (posters, PDF, PNG, visual philosophy) | `canvas-design` | `~/.pi/agent/skills/canvas-design/SKILL.md` |
 | **Photo search** (multi-source: Serper, Unsplash, Pexels) | `photo-finder` | `~/.pi/agent/skills/photo-finder/SKILL.md` |
-| **Pixel editing** (erase text/watermarks from existing images, fix logos) | `image-edit` | `~/my-skills/image-edit/SKILL.md` |
+| **Pixel editing** (erase text/watermarks from existing images, fix logos) | `image-edit` | `~/.pi/agent/skills/image-edit/SKILL.md` |
+| **Лебедев review** (бизнес-линч, brutal design critique with screenshots) | `artemy` | `~/.pi/agent/skills/artemy/SKILL.md` |
+| **Design audit** (find where defaults leak through your brand) | `design-audit` | `~/.pi/agent/skills/design-audit/SKILL.md` |
 
 ---
 
@@ -48,8 +50,7 @@ One skill to load for any visual work. Routes to specialized sub-skills by task 
 
 ### Need photos for content
 ```
-1. unsplash        → Search Unsplash/Pexels APIs, verify every URL loads
-2. photo-finder    → Broader search (Serper/Google Images + above)
+1. photo-finder    → Search Unsplash/Pexels/Serper, verify every URL loads
 ```
 
 ### Create visual art / poster / PDF
@@ -62,6 +63,17 @@ One skill to load for any visual work. Routes to specialized sub-skills by task 
 1. image-edit      → Inspect background type, scan coordinates, erase with alpha
 2. browser-testing → Verify result in actual browser (cache gotcha!)
 3. canvas-design   → If 2 attempts fail — recreate the asset cleanly
+```
+
+### Get a brutal design review
+```
+1. artemy          → Бизнес-линч: screenshots + Lebedev-style critique in Russian
+```
+
+### Audit design consistency (post-sprint)
+```
+1. design-audit    → Find 7 common leak patterns (black buttons, mixed accents, etc.)
+2. visual-qa-loop  → Batch fix all findings
 ```
 
 ---
@@ -145,7 +157,7 @@ From `ui-design` + `mobile-first` combined:
 | Color theory | `ui-design` | `frontend-design` (briefly) | ✅ No conflict — ui-design = theory, frontend-design = application |
 | Typography | `ui-design` (scale, pairing) | `mobile-first` (fluid clamp) | ✅ Complementary |
 | Component sourcing | `component-craft` | `shadcn-ui` | ✅ component-craft = premium/animated, shadcn = foundation |
-| Photo search | `unsplash` | `photo-finder` | ⚠️ Overlap — unsplash = verified stock, photo-finder = multi-source broader. Both valid. |
+| Photo search | `photo-finder` | — | ✅ Merged (was unsplash + photo-finder) |
 | Patterns | `ui-patterns` | `component-craft` | ✅ ui-patterns = research/exploration, component-craft = implementation |
 | Accessibility | `shadcn-ui` | `ui-design` (contrast checks) | ✅ shadcn = baked-in a11y, ui-design = checklist |
 | Mobile | `mobile-first` | `ui-design` (responsive checklist) | ✅ mobile-first = deep technical, ui-design = high-level |
