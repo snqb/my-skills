@@ -40,9 +40,9 @@ sleep 2
 tmux capture-pane -t pi:app -p -S -5
 ```
 
-### 2. Take screenshots with Playwright
+### 2. Take screenshots with ABP (browser.js)
 
-Write a script to `/tmp/review-screenshots.js`. Capture **at minimum**:
+Use `browser.js` from the `browser-testing` skill. Capture **at minimum**:
 
 - Home page (desktop)
 - Home page (mobile 390×844)
@@ -51,38 +51,33 @@ Write a script to `/tmp/review-screenshots.js`. Capture **at minimum**:
 - Dark mode (if exists)
 - Any "explore" / secondary page
 
-```javascript
-// /tmp/review-screenshots.js
-const { chromium } = require('playwright');
-(async () => {
-  const browser = await chromium.launch({ headless: true });
-
-  // Desktop
-  const desktop = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  const dp = await desktop.newPage();
-  await dp.goto('http://localhost:PORT');
-  await dp.waitForTimeout(1500);
-  await dp.screenshot({ path: '/tmp/review-home.png' });
-
-  // Interact — search, click, navigate. Capture each state.
-  // ...
-
-  // Mobile
-  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  const mp = await mobile.newPage();
-  await mp.goto('http://localhost:PORT');
-  await mp.waitForTimeout(1500);
-  await mp.screenshot({ path: '/tmp/review-mobile.png' });
-
-  // ...more flows...
-
-  await browser.close();
-})();
-```
-
-Run it:
 ```bash
-cd /tmp && node review-screenshots.js
+B=~/.pi/agent/skills/browser-testing/browser.js
+
+# Launch browser
+$B start --headless
+
+# Desktop screenshots (default viewport 1280x900)
+$B nav 'http://localhost:PORT'
+$B screenshot /tmp/review-home.png
+
+# Interact — search, click, navigate. Capture each state.
+$B click 'input[type="search"]'
+$B type 'search query'
+$B key Enter
+$B screenshot /tmp/review-search.png
+
+# Navigate to a detail page
+$B click 'a.detail-link'
+$B screenshot /tmp/review-detail.png --full
+
+# Mobile viewport
+$B nav 'http://localhost:PORT' --device 'iPhone 15'
+$B screenshot /tmp/review-mobile.png
+
+# Dark mode (if exists)
+$B eval 'document.documentElement.classList.add("dark")'
+$B screenshot /tmp/review-dark.png
 ```
 
 ### 3. Read screenshots
@@ -151,7 +146,7 @@ After all testimonies:
 ## Cleanup
 
 ```bash
-rm /tmp/review-screenshots.js /tmp/review-*.png
+rm /tmp/review-*.png
 tmux kill-window -t pi:app 2>/dev/null
 ```
 
